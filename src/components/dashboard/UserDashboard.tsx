@@ -1300,9 +1300,17 @@ const UserDashboard = () => {
             Welcome back{userName ? `, ${userName}` : ''}!
           </h1>
         </div>
-        <div className="flex gap-2 flex-shrink-0">
+        <div className="flex gap-2 flex-shrink-0 items-center">
           {isResizeMode ? (
             <>
+              {/* Compact customize mode indicator */}
+              <div className="bg-primary/10 border border-primary/20 rounded-lg px-3 py-1.5 hidden sm:flex items-center">
+                <p className="text-xs text-primary font-medium flex items-center gap-1.5">
+                  <Settings2 className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">Drag to move, resize edges, or click X to remove</span>
+                  <span className="md:hidden">Edit mode</span>
+                </p>
+              </div>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="gap-2">
@@ -1360,16 +1368,6 @@ const UserDashboard = () => {
           )}
         </div>
       </div>
-
-      {/* Customize mode indicator */}
-      {isResizeMode && (
-        <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-center">
-          <p className="text-sm text-primary font-medium">
-            <Settings2 className="w-4 h-4 inline mr-2" />
-            Customize Mode: Drag widgets to move, drag corners/edges to resize, click X to remove, or add new widgets
-          </p>
-        </div>
-      )}
 
       {/* Resizable Grid Layout */}
       <ResizableDashboard
