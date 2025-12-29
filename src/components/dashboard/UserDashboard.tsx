@@ -206,19 +206,33 @@ const UserDashboard = () => {
     setWidgetLayouts(newLayouts);
   }, []);
 
-  // Handle widget removal - add to pending changes instead of saving immediately
-  const handleWidgetRemove = useCallback((key: WidgetKey) => {
-    // Toggle the widget in pending changes (same logic as adding)
-    setPendingWidgetChanges(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
+  // Handle widget removal - stage the change, and only persist on "Done"
+  const handleWidgetRemove = useCallback(
+    (key: WidgetKey) => {
+      const isCurrentlyVisible = visibleWidgets.includes(key);
+
+      setPendingWidgetChanges((prev) => {
+        const next = new Set(prev);
+        const wasPending = next.has(key);
+
+        if (wasPending) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+
+        const isNowPending = !wasPending;
+        if (isCurrentlyVisible) {
+          toast(isNowPending ? "Marked for removal (will apply on Done)" : "Removal undone");
+        } else {
+          toast(isNowPending ? "Marked to add (will apply on Done)" : "Add undone");
+        }
+
+        return next;
+      });
+    },
+    [visibleWidgets]
+  );
 
   // Toggle widget in pending changes (for batch add/remove)
   const togglePendingWidget = useCallback((key: WidgetKey) => {
@@ -1291,6 +1305,7 @@ const UserDashboard = () => {
         isResizeMode={isResizeMode}
         visibleWidgets={visibleWidgets}
         widgetLayouts={widgetLayouts}
+        pendingWidgetChanges={pendingWidgetChanges}
         onLayoutChange={handleLayoutChange}
         onWidgetRemove={handleWidgetRemove}
         renderWidget={renderWidget}

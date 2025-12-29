@@ -22,6 +22,7 @@ interface ResizableDashboardProps {
   isResizeMode: boolean;
   visibleWidgets: WidgetKey[];
   widgetLayouts: WidgetLayoutConfig;
+  pendingWidgetChanges?: Set<WidgetKey>;
   onLayoutChange: (layouts: WidgetLayoutConfig) => void;
   onWidgetRemove: (key: WidgetKey) => void;
   renderWidget: (key: WidgetKey) => React.ReactNode;
@@ -35,6 +36,7 @@ export const ResizableDashboard = ({
   isResizeMode,
   visibleWidgets,
   widgetLayouts,
+  pendingWidgetChanges,
   onLayoutChange,
   onWidgetRemove,
   renderWidget,
@@ -117,46 +119,60 @@ export const ResizableDashboard = ({
         onLayoutChange={handleLayoutChange}
         autoSize
       >
-        {visibleWidgets.map((key) => (
-          <div
-            key={key}
-            className={isResizeMode ? "dash-item dash-item--edit" : "dash-item"}
-          >
-            {isResizeMode && (
-              <Button
-                variant="destructive"
-                size="icon"
-                className="dash-remove absolute -top-2 -right-2 z-30 h-6 w-6 rounded-full shadow-lg border-2 border-background"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onWidgetRemove(key);
-                }}
-                aria-label={`Remove ${key} widget`}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            )}
+        {visibleWidgets.map((key) => {
+          const isPendingRemoval = !!pendingWidgetChanges?.has(key);
+          const itemClassName = [
+            "dash-item",
+            isResizeMode ? "dash-item--edit" : "",
+            isResizeMode && isPendingRemoval ? "dash-item--pending-remove" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
 
-            {isResizeMode && (
+          return (
+            <div key={key} className={itemClassName}>
+              {isResizeMode && isPendingRemoval && (
+                <div className="dash-pending-badge" aria-hidden="true">
+                  Pending removal
+                </div>
+              )}
+
+              {isResizeMode && (
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  className="dash-remove pointer-events-auto absolute -top-2 -right-2 z-30 h-6 w-6 rounded-full shadow-lg border-2 border-background"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onWidgetRemove(key);
+                  }}
+                  aria-label={`Remove ${key} widget`}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+
+              {isResizeMode && (
+                <div
+                  className="dash-drag-handle"
+                  role="button"
+                  aria-label="Drag widget"
+                  tabIndex={0}
+                >
+                  <GripVertical className="h-4 w-4 text-muted-foreground" />
+                </div>
+              )}
+
               <div
-                className="dash-drag-handle"
-                role="button"
-                aria-label="Drag widget"
-                tabIndex={0}
+                className={
+                  isResizeMode ? "dash-content dash-content--locked" : "dash-content"
+                }
               >
-                <GripVertical className="h-4 w-4 text-muted-foreground" />
+                {renderWidget(key)}
               </div>
-            )}
-
-            <div
-              className={
-                isResizeMode ? "dash-content dash-content--locked" : "dash-content"
-              }
-            >
-              {renderWidget(key)}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </GridLayout>
 
       <style>{`
@@ -167,7 +183,7 @@ export const ResizableDashboard = ({
         .dash-item {
           height: 100%;
           position: relative;
-          overflow: hidden;
+          overflow: visible;
           border-radius: 0.75rem;
           background: hsl(var(--card));
           border: 1px solid hsl(var(--border));
@@ -191,6 +207,35 @@ export const ResizableDashboard = ({
         .dash-content--locked {
           pointer-events: none;
           user-select: none;
+        }
+
+        .dash-item--pending-remove {
+          opacity: 0.55;
+          filter: grayscale(0.15);
+        }
+        .dash-item--pending-remove::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background: hsl(var(--destructive) / 0.06);
+          pointer-events: none;
+        }
+
+        .dash-pending-badge {
+          position: absolute;
+          bottom: 8px;
+          left: 8px;
+          z-index: 25;
+          pointer-events: none;
+
+          font-size: 12px;
+          line-height: 1;
+          padding: 4px 8px;
+          border-radius: 9999px;
+          border: 1px solid hsl(var(--destructive) / 0.3);
+          background: hsl(var(--background) / 0.85);
+          color: hsl(var(--destructive));
+          backdrop-filter: blur(8px);
         }
 
         .dash-item--edit {
