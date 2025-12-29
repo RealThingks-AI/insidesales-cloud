@@ -23,6 +23,66 @@ import { MeetingModal } from "@/components/MeetingModal";
 import { useTasks } from "@/hooks/useTasks";
 import { Task } from "@/types/task";
 
+const GRID_COLS = 12;
+
+// Utility: Compact layouts to remove all gaps (both vertical and horizontal)
+const compactLayoutsUtil = (layouts: WidgetLayoutConfig, visibleKeys: WidgetKey[]): WidgetLayoutConfig => {
+  // Convert to array and filter only visible widgets, sort by y then x
+  const items = visibleKeys
+    .filter(key => layouts[key])
+    .map(key => ({ key, ...layouts[key] }))
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  
+  const compacted: WidgetLayoutConfig = {};
+  const grid: boolean[][] = [];
+  
+  // Helper to check if position is free
+  const canPlace = (x: number, y: number, w: number, h: number): boolean => {
+    if (x < 0 || x + w > GRID_COLS) return false;
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        if (grid[y + dy]?.[x + dx]) return false;
+      }
+    }
+    return true;
+  };
+  
+  // Helper to mark grid cells as occupied
+  const occupy = (x: number, y: number, w: number, h: number) => {
+    for (let dy = 0; dy < h; dy++) {
+      if (!grid[y + dy]) grid[y + dy] = new Array(GRID_COLS).fill(false);
+      for (let dx = 0; dx < w; dx++) {
+        grid[y + dy][x + dx] = true;
+      }
+    }
+  };
+  
+  // Place each item in the first available position (top-left priority)
+  items.forEach(item => {
+    let placed = false;
+    
+    // Scan from top-left to find first available position
+    for (let y = 0; y < 100 && !placed; y++) {
+      for (let x = 0; x <= GRID_COLS - item.w && !placed; x++) {
+        if (canPlace(x, y, item.w, item.h)) {
+          occupy(x, y, item.w, item.h);
+          compacted[item.key] = { x, y, w: item.w, h: item.h };
+          placed = true;
+        }
+      }
+    }
+    
+    // Fallback if somehow not placed
+    if (!placed) {
+      const fallbackY = Object.keys(compacted).length * 2;
+      occupy(0, fallbackY, item.w, item.h);
+      compacted[item.key] = { x: 0, y: fallbackY, w: item.w, h: item.h };
+    }
+  });
+  
+  return compacted;
+};
+
 const UserDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -156,9 +216,13 @@ const UserDashboard = () => {
     const missingVisible = nextVisible.filter((k) => !nextOrderBase.includes(k));
     const nextOrder = [...nextOrderBase, ...missingVisible];
 
+    // Compact layouts on load to remove any gaps
+    const loadedLayouts = parseWidgetLayouts();
+    const compactedLayouts = compactLayoutsUtil(loadedLayouts, nextVisible);
+
     setVisibleWidgets(nextVisible);
     setWidgetOrder(nextOrder);
-    setWidgetLayouts(parseWidgetLayouts());
+    setWidgetLayouts(compactedLayouts);
   }, [
     user?.id,
     dashboardPrefs?.visible_widgets,
@@ -255,47 +319,6 @@ const UserDashboard = () => {
     return isPending ? !isCurrentlyVisible : isCurrentlyVisible;
   }, [visibleWidgets, pendingWidgetChanges]);
 
-  // Compact layouts vertically to remove gaps
-  const compactLayouts = useCallback((layouts: WidgetLayoutConfig, visibleKeys: WidgetKey[]): WidgetLayoutConfig => {
-    const COLS = 12;
-    
-    // Convert to array and filter only visible widgets
-    const items = visibleKeys
-      .filter(key => layouts[key])
-      .map(key => ({ key, ...layouts[key] }))
-      .sort((a, b) => a.y - b.y || a.x - b.x);
-    
-    const compacted: WidgetLayoutConfig = {};
-    const grid: boolean[][] = [];
-    
-    items.forEach(item => {
-      // Find the lowest y position this item can occupy
-      let newY = 0;
-      while (true) {
-        let fits = true;
-        for (let dy = 0; dy < item.h && fits; dy++) {
-          if (!grid[newY + dy]) grid[newY + dy] = new Array(COLS).fill(false);
-          for (let dx = 0; dx < item.w && fits; dx++) {
-            if (grid[newY + dy][item.x + dx]) fits = false;
-          }
-        }
-        if (fits) break;
-        newY++;
-      }
-      
-      // Mark grid cells as occupied
-      for (let dy = 0; dy < item.h; dy++) {
-        if (!grid[newY + dy]) grid[newY + dy] = new Array(COLS).fill(false);
-        for (let dx = 0; dx < item.w; dx++) {
-          grid[newY + dy][item.x + dx] = true;
-        }
-      }
-      
-      compacted[item.key] = { x: item.x, y: newY, w: item.w, h: item.h };
-    });
-    
-    return compacted;
-  }, []);
 
   // Find next available grid position for a widget
   const findNextGridPosition = useCallback((existingLayouts: WidgetLayoutConfig, widgetWidth: number, widgetHeight: number) => {
@@ -367,13 +390,13 @@ const UserDashboard = () => {
     });
 
     // Compact layouts to remove empty spaces
-    const compactedLayouts = compactLayouts(nextLayouts, nextVisible);
+    const compactedLayouts = compactLayoutsUtil(nextLayouts, nextVisible);
 
     setVisibleWidgets(nextVisible);
     setWidgetOrder(nextOrder);
     setWidgetLayouts(compactedLayouts);
     setPendingWidgetChanges(new Set());
-  }, [pendingWidgetChanges, visibleWidgets, widgetOrder, widgetLayouts, findNextGridPosition, compactLayouts]);
+  }, [pendingWidgetChanges, visibleWidgets, widgetOrder, widgetLayouts, findNextGridPosition]);
 
   // Save layout and exit resize mode
   const handleSaveLayout = () => {
@@ -410,7 +433,7 @@ const UserDashboard = () => {
     });
     
     // Compact layouts to remove empty spaces
-    const compactedLayouts = compactLayouts(finalLayouts, finalVisible);
+    const compactedLayouts = compactLayoutsUtil(finalLayouts, finalVisible);
     
     // Update local state
     setVisibleWidgets(finalVisible);
