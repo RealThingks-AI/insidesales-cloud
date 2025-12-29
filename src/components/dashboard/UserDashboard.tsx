@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Users, FileText, Briefcase, TrendingUp, Clock, CheckCircle2, ArrowRight, Plus, Settings2, Calendar, Activity, Bell, AlertCircle, Info, 
   Target, PieChart, LineChart, DollarSign, Mail, MessageSquare, CheckCircle, AlertTriangle, 
-  Globe, Building2, Star, Trophy, Gauge, ListTodo, PhoneCall, MapPin, Percent, ArrowUpRight, Filter, Move, Check
+  Globe, Building2, Star, Trophy, Gauge, ListTodo, PhoneCall, MapPin, Percent, ArrowUpRight, Filter, Move, Check, X, RotateCcw
 } from "lucide-react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { WidgetKey, WidgetLayoutConfig, WidgetLayout, DEFAULT_WIDGETS } from "./DashboardCustomizeModal";
@@ -93,6 +93,13 @@ const UserDashboard = () => {
   
   // Pending widget changes for batch add/remove
   const [pendingWidgetChanges, setPendingWidgetChanges] = useState<Set<WidgetKey>>(new Set());
+  
+  // Store original state when entering customize mode (for cancel functionality)
+  const [originalState, setOriginalState] = useState<{
+    visible: WidgetKey[];
+    order: WidgetKey[];
+    layouts: WidgetLayoutConfig;
+  } | null>(null);
   
   // Modal states for viewing records
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -265,10 +272,12 @@ const UserDashboard = () => {
     },
   });
 
-  // Handle layout changes from ResizableDashboard
+  // Handle layout changes from ResizableDashboard - auto-compact after each change
   const handleLayoutChange = useCallback((newLayouts: WidgetLayoutConfig) => {
-    setWidgetLayouts(newLayouts);
-  }, []);
+    // Apply compaction after every drag/resize to remove gaps
+    const compacted = compactLayoutsUtil(newLayouts, visibleWidgets);
+    setWidgetLayouts(compacted);
+  }, [visibleWidgets]);
 
   // Handle widget removal - stage the change, and only persist on "Done"
   const handleWidgetRemove = useCallback(
@@ -287,9 +296,9 @@ const UserDashboard = () => {
 
         const isNowPending = !wasPending;
         if (isCurrentlyVisible) {
-          toast(isNowPending ? "Marked for removal (will apply on Done)" : "Removal undone");
+          toast(isNowPending ? "Marked for removal (will apply on Save)" : "Removal undone");
         } else {
-          toast(isNowPending ? "Marked to add (will apply on Done)" : "Add undone");
+          toast(isNowPending ? "Marked to add (will apply on Save)" : "Add undone");
         }
 
         return next;
@@ -446,8 +455,72 @@ const UserDashboard = () => {
       layouts: compactedLayouts
     });
     setPendingWidgetChanges(new Set());
+    setOriginalState(null);
     setIsResizeMode(false);
   };
+
+  // Enter customize mode - store original state for cancel
+  const handleEnterCustomizeMode = useCallback(() => {
+    setOriginalState({
+      visible: [...visibleWidgets],
+      order: [...widgetOrder],
+      layouts: { ...widgetLayouts }
+    });
+    setIsResizeMode(true);
+  }, [visibleWidgets, widgetOrder, widgetLayouts]);
+
+  // Cancel customize mode - restore original state
+  const handleCancelCustomize = useCallback(() => {
+    if (originalState) {
+      setVisibleWidgets(originalState.visible);
+      setWidgetOrder(originalState.order);
+      setWidgetLayouts(originalState.layouts);
+    }
+    setPendingWidgetChanges(new Set());
+    setOriginalState(null);
+    setIsResizeMode(false);
+    toast.info("Changes discarded");
+  }, [originalState]);
+
+  // Reset to default layout
+  const handleResetToDefault = useCallback(() => {
+    const defaultVisible = DEFAULT_WIDGETS.filter(w => w.visible).map(w => w.key);
+    const defaultOrder = DEFAULT_WIDGETS.map(w => w.key);
+    const defaultLayouts: WidgetLayoutConfig = {};
+    
+    // Create default grid layout
+    let x = 0, y = 0;
+    defaultVisible.forEach(key => {
+      if (x + 3 > GRID_COLS) {
+        x = 0;
+        y += 2;
+      }
+      defaultLayouts[key] = { x, y, w: 3, h: 2 };
+      x += 3;
+    });
+    
+    const compacted = compactLayoutsUtil(defaultLayouts, defaultVisible);
+    setVisibleWidgets(defaultVisible);
+    setWidgetOrder(defaultOrder);
+    setWidgetLayouts(compacted);
+    setPendingWidgetChanges(new Set());
+    toast.info("Layout reset to default");
+  }, []);
+
+  // Keyboard shortcuts for customize mode
+  useEffect(() => {
+    if (!isResizeMode) return;
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCancelCustomize();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isResizeMode, handleCancelCustomize]);
 
   // Fetch user's leads count
   const { data: leadsData, isLoading: leadsLoading } = useQuery({
@@ -1307,10 +1380,21 @@ const UserDashboard = () => {
               <div className="bg-primary/10 border border-primary/20 rounded-lg px-3 py-1.5 hidden sm:flex items-center">
                 <p className="text-xs text-primary font-medium flex items-center gap-1.5">
                   <Settings2 className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Drag to move, resize edges, or click X to remove</span>
+                  <span className="hidden md:inline">Drag to move, resize edges, or press Escape to cancel</span>
                   <span className="md:hidden">Edit mode</span>
                 </p>
               </div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" onClick={handleResetToDefault} className="gap-2">
+                      <RotateCcw className="w-4 h-4" />
+                      <span className="hidden sm:inline">Reset</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Reset to default layout</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="gap-2">
@@ -1326,7 +1410,7 @@ const UserDashboard = () => {
                 <PopoverContent className="w-64 p-0" align="end">
                   <div className="p-3 border-b">
                     <p className="text-sm font-medium">Toggle Widgets</p>
-                    <p className="text-xs text-muted-foreground">Click to add/remove. Changes apply when you click Done.</p>
+                    <p className="text-xs text-muted-foreground">Click to add/remove. Changes apply when you click Save.</p>
                   </div>
                   <ScrollArea className="h-64">
                     <div className="p-2 space-y-1">
@@ -1355,13 +1439,17 @@ const UserDashboard = () => {
                   </ScrollArea>
                 </PopoverContent>
               </Popover>
+              <Button variant="outline" onClick={handleCancelCustomize} className="gap-2">
+                <X className="w-4 h-4" />
+                Cancel
+              </Button>
               <Button onClick={handleSaveLayout} className="gap-2" disabled={savePreferencesMutation.isPending}>
                 <Check className="w-4 h-4" />
                 {savePreferencesMutation.isPending ? 'Saving...' : 'Save'}
               </Button>
             </>
           ) : (
-            <Button variant="outline" size="sm" onClick={() => setIsResizeMode(true)} className="gap-2">
+            <Button variant="outline" size="sm" onClick={handleEnterCustomizeMode} className="gap-2">
               <Settings2 className="w-4 h-4" />
               Customize
             </Button>
@@ -1394,7 +1482,7 @@ const UserDashboard = () => {
         onUpdate={async (taskId, updates, original) => {
           const result = await updateTask(taskId, updates, original);
           if (result) {
-            queryClient.invalidateQueries({ queryKey: ['dashboard-task-reminders'] });
+            queryClient.invalidateQueries({ queryKey: ['user-task-reminders', user?.id] });
           }
           return result;
         }}
@@ -1409,7 +1497,7 @@ const UserDashboard = () => {
         }}
         meeting={selectedMeeting}
         onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['dashboard-upcoming-meetings'] });
+          queryClient.invalidateQueries({ queryKey: ['user-upcoming-meetings', user?.id] });
           setMeetingModalOpen(false);
           setSelectedMeeting(null);
         }}
