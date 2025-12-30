@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useCRUDAudit } from "@/hooks/useCRUDAudit";
 import { useUserDisplayNames } from "@/hooks/useUserDisplayNames";
+import { useColumnPreferences } from "@/hooks/useColumnPreferences";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, X, Eye } from "lucide-react";
 import { RowActionsDropdown, Edit, Trash2, Mail } from "./RowActionsDropdown";
 import { AccountModal } from "./AccountModal";
-import { AccountColumnCustomizer, AccountColumnConfig } from "./AccountColumnCustomizer";
+import { AccountColumnCustomizer, AccountColumnConfig, defaultAccountColumns } from "./AccountColumnCustomizer";
 import { AccountStatusFilter } from "./AccountStatusFilter";
 import { AccountDeleteConfirmDialog } from "./AccountDeleteConfirmDialog";
 import { SendEmailModal, EmailRecipient } from "./SendEmailModal";
@@ -43,62 +44,6 @@ export interface Account {
   score?: number;
   segment?: string;
 }
-const defaultColumns: AccountColumnConfig[] = [{
-  field: 'company_name',
-  label: 'Company Name',
-  visible: true,
-  order: 0
-}, {
-  field: 'email',
-  label: 'Email',
-  visible: true,
-  order: 1
-}, {
-  field: 'company_type',
-  label: 'Company Type',
-  visible: true,
-  order: 2
-}, {
-  field: 'industry',
-  label: 'Industry',
-  visible: true,
-  order: 3
-}, {
-  field: 'tags',
-  label: 'Tags',
-  visible: true,
-  order: 4
-}, {
-  field: 'country',
-  label: 'Country',
-  visible: true,
-  order: 5
-}, {
-  field: 'status',
-  label: 'Status',
-  visible: true,
-  order: 6
-}, {
-  field: 'website',
-  label: 'Website',
-  visible: true,
-  order: 7
-}, {
-  field: 'region',
-  label: 'Region',
-  visible: false,
-  order: 8
-}, {
-  field: 'phone',
-  label: 'Phone',
-  visible: false,
-  order: 9
-}, {
-  field: 'account_owner',
-  label: 'Account Owner',
-  visible: true,
-  order: 10
-}];
 interface AccountTableProps {
   showColumnCustomizer: boolean;
   setShowColumnCustomizer: (show: boolean) => void;
@@ -133,6 +78,18 @@ const AccountTable = ({
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
+  // Column preferences hook
+  const { columns, saveColumns, isSaving } = useColumnPreferences({
+    moduleName: 'accounts',
+    defaultColumns: defaultAccountColumns,
+  });
+  const [localColumns, setLocalColumns] = useState<AccountColumnConfig[]>(columns);
+  
+  // Sync local columns when saved columns change
+  useEffect(() => {
+    setLocalColumns(columns);
+  }, [columns]);
+
   // Get owner parameter from URL - "me" means filter by current user
   const ownerParam = searchParams.get('owner');
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
@@ -169,7 +126,6 @@ const AccountTable = ({
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
-  const [columns, setColumns] = useState(defaultColumns);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(50);
   const [sortField, setSortField] = useState<string | null>(null);
@@ -312,7 +268,7 @@ const AccountTable = ({
   const {
     displayNames
   } = useUserDisplayNames(createdByIds);
-  const visibleColumns = columns.filter(col => col.visible);
+  const visibleColumns = localColumns.filter(col => col.visible);
   const pageAccounts = getCurrentPageAccounts();
   const getStatusBadgeVariant = (status?: string) => {
     switch (status) {
@@ -516,7 +472,7 @@ const AccountTable = ({
       setEditingAccount(null);
     }} />
 
-      <AccountColumnCustomizer open={showColumnCustomizer} onOpenChange={setShowColumnCustomizer} columns={columns} onColumnsChange={setColumns} />
+      <AccountColumnCustomizer open={showColumnCustomizer} onOpenChange={setShowColumnCustomizer} columns={localColumns} onColumnsChange={setLocalColumns} onSave={saveColumns} isSaving={isSaving} />
 
       <AccountDeleteConfirmDialog open={showDeleteDialog} onConfirm={handleDelete} onCancel={() => {
       setShowDeleteDialog(false);

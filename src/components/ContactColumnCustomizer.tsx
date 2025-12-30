@@ -1,9 +1,9 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Loader2 } from "lucide-react";
 
 export interface ContactColumnConfig {
   field: string;
@@ -17,15 +17,36 @@ interface ContactColumnCustomizerProps {
   onOpenChange: (open: boolean) => void;
   columns: ContactColumnConfig[];
   onColumnsChange: (columns: ContactColumnConfig[]) => void;
+  onSave?: (columns: ContactColumnConfig[]) => Promise<unknown>;
+  isSaving?: boolean;
 }
+
+export const defaultContactColumns: ContactColumnConfig[] = [
+  { field: 'contact_name', label: 'Contact Name', visible: true, order: 0 },
+  { field: 'company_name', label: 'Company Name', visible: true, order: 1 },
+  { field: 'position', label: 'Position', visible: true, order: 2 },
+  { field: 'email', label: 'Email', visible: true, order: 3 },
+  { field: 'phone_no', label: 'Phone', visible: true, order: 4 },
+  { field: 'region', label: 'Region', visible: true, order: 5 },
+  { field: 'contact_owner', label: 'Contact Owner', visible: true, order: 6 },
+  { field: 'industry', label: 'Industry', visible: true, order: 7 },
+  { field: 'contact_source', label: 'Source', visible: true, order: 8 },
+];
 
 export const ContactColumnCustomizer = ({ 
   open, 
   onOpenChange, 
   columns, 
-  onColumnsChange 
+  onColumnsChange,
+  onSave,
+  isSaving = false,
 }: ContactColumnCustomizerProps) => {
   const [localColumns, setLocalColumns] = useState<ContactColumnConfig[]>(columns);
+
+  // Sync local columns when props change
+  useEffect(() => {
+    setLocalColumns(columns);
+  }, [columns]);
 
   const handleVisibilityChange = (field: string, visible: boolean) => {
     const updatedColumns = localColumns.map(col => 
@@ -34,24 +55,16 @@ export const ContactColumnCustomizer = ({
     setLocalColumns(updatedColumns);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     onColumnsChange(localColumns);
+    if (onSave) {
+      await onSave(localColumns);
+    }
     onOpenChange(false);
   };
 
   const handleReset = () => {
-    const defaultColumns: ContactColumnConfig[] = [
-      { field: 'contact_name', label: 'Contact Name', visible: true, order: 0 },
-      { field: 'company_name', label: 'Company Name', visible: true, order: 1 },
-      { field: 'position', label: 'Position', visible: true, order: 2 },
-      { field: 'email', label: 'Email', visible: true, order: 3 },
-      { field: 'phone_no', label: 'Phone', visible: true, order: 4 },
-      { field: 'region', label: 'Region', visible: true, order: 5 },
-      { field: 'contact_owner', label: 'Contact Owner', visible: true, order: 6 },
-      { field: 'industry', label: 'Industry', visible: true, order: 7 },
-      { field: 'contact_source', label: 'Source', visible: true, order: 8 },
-    ];
-    setLocalColumns(defaultColumns);
+    setLocalColumns(defaultContactColumns);
   };
 
   return (
@@ -94,8 +107,15 @@ export const ContactColumnCustomizer = ({
             <Button variant="outline" onClick={handleReset}>
               Reset to Default
             </Button>
-            <Button onClick={handleSave}>
-              Apply Changes
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save'
+              )}
             </Button>
           </div>
         </div>

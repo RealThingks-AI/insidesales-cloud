@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RowActionsDropdown, Edit, Trash2, CheckSquare } from "./RowActionsDropdown";
 import { format } from "date-fns";
 import { InlineEditCell } from "./InlineEditCell";
-import { DealColumnCustomizer, DealColumnConfig } from "./DealColumnCustomizer";
+import { DealColumnCustomizer, DealColumnConfig, defaultDealColumns } from "./DealColumnCustomizer";
 import { BulkActionsBar } from "./BulkActionsBar";
 import { DealsAdvancedFilter, AdvancedFilterState } from "./DealsAdvancedFilter";
 import { TaskModal } from "./tasks/TaskModal";
@@ -19,6 +19,7 @@ import { DealActionsDropdown } from "./DealActionsDropdown";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useColumnPreferences } from "@/hooks/useColumnPreferences";
 
 interface ListViewProps {
   deals: Deal[];
