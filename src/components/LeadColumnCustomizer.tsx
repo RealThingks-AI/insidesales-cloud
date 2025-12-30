@@ -1,9 +1,9 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Loader2 } from "lucide-react";
 
 export interface LeadColumnConfig {
   field: string;
@@ -17,15 +17,35 @@ interface LeadColumnCustomizerProps {
   onOpenChange: (open: boolean) => void;
   columns: LeadColumnConfig[];
   onColumnsChange: (columns: LeadColumnConfig[]) => void;
+  onSave?: (columns: LeadColumnConfig[]) => Promise<unknown>;
+  isSaving?: boolean;
 }
+
+export const defaultLeadColumns: LeadColumnConfig[] = [
+  { field: 'lead_name', label: 'Lead Name', visible: true, order: 0 },
+  { field: 'account_company_name', label: 'Company Name', visible: true, order: 1 },
+  { field: 'position', label: 'Position', visible: true, order: 2 },
+  { field: 'email', label: 'Email', visible: true, order: 3 },
+  { field: 'phone_no', label: 'Phone', visible: true, order: 4 },
+  { field: 'contact_owner', label: 'Lead Owner', visible: true, order: 5 },
+  { field: 'lead_status', label: 'Lead Status', visible: true, order: 6 },
+  { field: 'contact_source', label: 'Source', visible: true, order: 7 },
+];
 
 export const LeadColumnCustomizer = ({ 
   open, 
   onOpenChange, 
   columns, 
-  onColumnsChange 
+  onColumnsChange,
+  onSave,
+  isSaving = false,
 }: LeadColumnCustomizerProps) => {
   const [localColumns, setLocalColumns] = useState<LeadColumnConfig[]>(columns);
+
+  // Sync local columns when props change
+  useEffect(() => {
+    setLocalColumns(columns);
+  }, [columns]);
 
   const handleVisibilityChange = (field: string, visible: boolean) => {
     const updatedColumns = localColumns.map(col => 
@@ -34,23 +54,16 @@ export const LeadColumnCustomizer = ({
     setLocalColumns(updatedColumns);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     onColumnsChange(localColumns);
+    if (onSave) {
+      await onSave(localColumns);
+    }
     onOpenChange(false);
   };
 
   const handleReset = () => {
-    const defaultColumns: LeadColumnConfig[] = [
-      { field: 'lead_name', label: 'Lead Name', visible: true, order: 0 },
-      { field: 'account_company_name', label: 'Company Name', visible: true, order: 1 },
-      { field: 'position', label: 'Position', visible: true, order: 2 },
-      { field: 'email', label: 'Email', visible: true, order: 3 },
-      { field: 'phone_no', label: 'Phone', visible: true, order: 4 },
-      { field: 'contact_owner', label: 'Lead Owner', visible: true, order: 5 },
-      { field: 'lead_status', label: 'Lead Status', visible: true, order: 6 },
-      { field: 'contact_source', label: 'Source', visible: true, order: 7 },
-    ];
-    setLocalColumns(defaultColumns);
+    setLocalColumns(defaultLeadColumns);
   };
 
   return (
@@ -93,8 +106,15 @@ export const LeadColumnCustomizer = ({
             <Button variant="outline" onClick={handleReset}>
               Reset to Default
             </Button>
-            <Button onClick={handleSave}>
-              Apply Changes
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save'
+              )}
             </Button>
           </div>
         </div>

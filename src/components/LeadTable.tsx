@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCRUDAudit } from "@/hooks/useCRUDAudit";
 import { useUserDisplayNames } from "@/hooks/useUserDisplayNames";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useColumnPreferences } from "@/hooks/useColumnPreferences";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, CalendarPlus, CheckSquare, FileText, Plus } from "lucide-react";
 import { RowActionsDropdown, Edit, Trash2, Mail, RefreshCw } from "./RowActionsDropdown";
 import { LeadModal } from "./LeadModal";
-import { LeadColumnCustomizer, LeadColumnConfig } from "./LeadColumnCustomizer";
+import { LeadColumnCustomizer, LeadColumnConfig, defaultLeadColumns } from "./LeadColumnCustomizer";
 import { LeadStatusFilter } from "./LeadStatusFilter";
 import { ConvertToDealModal } from "./ConvertToDealModal";
 import { LeadDeleteConfirmDialog } from "./LeadDeleteConfirmDialog";
@@ -162,7 +163,17 @@ const LeadTable = ({
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [leadToDelete, setLeadToDelete] = useState<Lead | null>(null);
-  const [columns, setColumns] = useState(defaultColumns);
+  
+  // Column preferences hook
+  const { columns, saveColumns, isSaving } = useColumnPreferences({
+    moduleName: 'leads',
+    defaultColumns: defaultLeadColumns,
+  });
+  const [localColumns, setLocalColumns] = useState<LeadColumnConfig[]>(columns);
+  
+  useEffect(() => {
+    setLocalColumns(columns);
+  }, [columns]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [showConvertModal, setShowConvertModal] = useState(false);
@@ -397,7 +408,7 @@ const LeadTable = ({
   const {
     displayNames
   } = useUserDisplayNames(createdByIds);
-  const visibleColumns = columns.filter(col => col.visible);
+  const visibleColumns = localColumns.filter(col => col.visible);
   const pageLeads = getCurrentPageLeads();
 
   const handleConvertToDeal = (lead: Lead) => {
@@ -634,7 +645,7 @@ const LeadTable = ({
       setEditingLead(null);
     }} />
 
-      <LeadColumnCustomizer open={showColumnCustomizer} onOpenChange={setShowColumnCustomizer} columns={columns} onColumnsChange={setColumns} />
+      <LeadColumnCustomizer open={showColumnCustomizer} onOpenChange={setShowColumnCustomizer} columns={localColumns} onColumnsChange={setLocalColumns} onSave={saveColumns} isSaving={isSaving} />
 
       <ConvertToDealModal open={showConvertModal} onOpenChange={setShowConvertModal} lead={leadToConvert} onSuccess={handleConvertSuccess} />
 

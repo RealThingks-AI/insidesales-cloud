@@ -1370,6 +1370,33 @@ export type Database = {
         }
         Relationships: []
       }
+      table_column_preferences: {
+        Row: {
+          column_config: Json
+          created_at: string | null
+          id: string
+          module_name: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          column_config: Json
+          created_at?: string | null
+          id?: string
+          module_name: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          column_config?: Json
+          created_at?: string | null
+          id?: string
+          module_name?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       task_subtasks: {
         Row: {
           created_at: string

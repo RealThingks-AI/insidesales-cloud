@@ -1,9 +1,9 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Loader2 } from "lucide-react";
 
 export interface DealColumnConfig {
   field: string;
@@ -17,15 +17,42 @@ interface DealColumnCustomizerProps {
   onOpenChange: (open: boolean) => void;
   columns: DealColumnConfig[];
   onColumnsChange: (columns: DealColumnConfig[]) => void;
+  onSave?: (columns: DealColumnConfig[]) => Promise<unknown>;
+  isSaving?: boolean;
 }
+
+export const defaultDealColumns: DealColumnConfig[] = [
+  { field: 'project_name', label: 'Project', visible: true, order: 0 },
+  { field: 'customer_name', label: 'Customer', visible: true, order: 1 },
+  { field: 'lead_name', label: 'Lead Name', visible: true, order: 2 },
+  { field: 'lead_owner', label: 'Lead Owner', visible: true, order: 3 },
+  { field: 'stage', label: 'Stage', visible: true, order: 4 },
+  { field: 'priority', label: 'Priority', visible: true, order: 5 },
+  { field: 'total_contract_value', label: 'Value', visible: true, order: 6 },
+  { field: 'probability', label: 'Probability', visible: true, order: 7 },
+  { field: 'expected_closing_date', label: 'Expected Close', visible: true, order: 8 },
+  { field: 'region', label: 'Region', visible: false, order: 9 },
+  { field: 'project_duration', label: 'Duration', visible: false, order: 10 },
+  { field: 'start_date', label: 'Start Date', visible: false, order: 11 },
+  { field: 'end_date', label: 'End Date', visible: false, order: 12 },
+  { field: 'proposal_due_date', label: 'Proposal Due', visible: false, order: 13 },
+  { field: 'total_revenue', label: 'Total Revenue', visible: false, order: 14 },
+];
 
 export const DealColumnCustomizer = ({ 
   open, 
   onOpenChange, 
   columns, 
-  onColumnsChange 
+  onColumnsChange,
+  onSave,
+  isSaving = false,
 }: DealColumnCustomizerProps) => {
   const [localColumns, setLocalColumns] = useState<DealColumnConfig[]>(columns);
+
+  // Sync local columns when props change
+  useEffect(() => {
+    setLocalColumns(columns);
+  }, [columns]);
 
   const handleVisibilityChange = (field: string, visible: boolean) => {
     const updatedColumns = localColumns.map(col => 
@@ -34,30 +61,16 @@ export const DealColumnCustomizer = ({
     setLocalColumns(updatedColumns);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     onColumnsChange(localColumns);
+    if (onSave) {
+      await onSave(localColumns);
+    }
     onOpenChange(false);
   };
 
   const handleReset = () => {
-    const defaultColumns: DealColumnConfig[] = [
-      { field: 'project_name', label: 'Project', visible: true, order: 0 },
-      { field: 'customer_name', label: 'Customer', visible: true, order: 1 },
-      { field: 'lead_name', label: 'Lead Name', visible: true, order: 2 },
-      { field: 'lead_owner', label: 'Lead Owner', visible: true, order: 3 },
-      { field: 'stage', label: 'Stage', visible: true, order: 4 },
-      { field: 'priority', label: 'Priority', visible: true, order: 5 },
-      { field: 'total_contract_value', label: 'Value', visible: true, order: 6 },
-      { field: 'probability', label: 'Probability', visible: true, order: 7 },
-      { field: 'expected_closing_date', label: 'Expected Close', visible: true, order: 8 },
-      { field: 'region', label: 'Region', visible: false, order: 9 },
-      { field: 'project_duration', label: 'Duration', visible: false, order: 10 },
-      { field: 'start_date', label: 'Start Date', visible: false, order: 11 },
-      { field: 'end_date', label: 'End Date', visible: false, order: 12 },
-      { field: 'proposal_due_date', label: 'Proposal Due', visible: false, order: 13 },
-      { field: 'total_revenue', label: 'Total Revenue', visible: false, order: 14 },
-    ];
-    setLocalColumns(defaultColumns);
+    setLocalColumns(defaultDealColumns);
   };
 
   return (
@@ -100,8 +113,15 @@ export const DealColumnCustomizer = ({
             <Button variant="outline" onClick={handleReset}>
               Reset to Default
             </Button>
-            <Button onClick={handleSave}>
-              Apply Changes
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save'
+              )}
             </Button>
           </div>
         </div>
