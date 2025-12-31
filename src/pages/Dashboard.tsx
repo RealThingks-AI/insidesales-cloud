@@ -26,10 +26,10 @@ const Dashboard = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   
-  const availableYears = [2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027, 2028, 2029, 2030];
+  // Dynamic year range: 5 years before and after current year
   const currentYear = new Date().getFullYear();
-  const defaultYear = availableYears.includes(currentYear) ? currentYear : 2025;
-  const [selectedYear, setSelectedYear] = useState(defaultYear);
+  const availableYears = Array.from({ length: 11 }, (_, i) => currentYear - 5 + i);
+  const [selectedYear, setSelectedYear] = useState(currentYear);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Fetch user's profile name
@@ -107,8 +107,19 @@ const Dashboard = () => {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await queryClient.invalidateQueries({ queryKey: ['user-'] });
-      await queryClient.invalidateQueries({ queryKey: ['dashboard-'] });
+      // Invalidate all dashboard-related queries with proper patterns
+      await queryClient.invalidateQueries({ predicate: (query) => {
+        const key = query.queryKey[0];
+        return typeof key === 'string' && (
+          key.startsWith('user-') || 
+          key.startsWith('dashboard-') ||
+          key === 'deals' ||
+          key === 'leads' ||
+          key === 'accounts' ||
+          key === 'tasks' ||
+          key === 'meetings'
+        );
+      }});
       toast.success("Dashboard refreshed");
     } catch {
       toast.error("Failed to refresh");
