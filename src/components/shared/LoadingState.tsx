@@ -3,26 +3,52 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface LoadingStateProps {
-  variant?: "spinner" | "skeleton" | "page";
+  variant?: "spinner" | "skeleton" | "page" | "inline" | "button";
   message?: string;
   className?: string;
   rows?: number;
   columns?: number;
+  size?: "sm" | "md" | "lg";
 }
+
+const sizeClasses = {
+  sm: "h-4 w-4",
+  md: "h-6 w-6",
+  lg: "h-8 w-8",
+};
 
 export const LoadingState = ({
   variant = "spinner",
-  message = "Loading...",
+  message,
   className,
   rows = 5,
   columns = 6,
+  size = "md",
 }: LoadingStateProps) => {
+  if (variant === "inline") {
+    return (
+      <div className={cn("inline-flex items-center gap-2", className)}>
+        <Loader2 className={cn("animate-spin text-primary", sizeClasses[size])} />
+        {message && <span className="text-sm text-muted-foreground">{message}</span>}
+      </div>
+    );
+  }
+
+  if (variant === "button") {
+    return (
+      <div className={cn("inline-flex items-center gap-2", className)}>
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>{message || "Loading..."}</span>
+      </div>
+    );
+  }
+
   if (variant === "page") {
     return (
       <div className={cn("flex items-center justify-center h-64", className)}>
         <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground text-sm">{message}</p>
+          <Loader2 className={cn("animate-spin text-primary mx-auto mb-4", sizeClasses.lg)} />
+          <p className="text-muted-foreground text-sm">{message || "Loading..."}</p>
         </div>
       </div>
     );
@@ -65,7 +91,7 @@ export const LoadingState = ({
   // Default spinner variant
   return (
     <div className={cn("flex items-center justify-center py-8", className)}>
-      <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      <Loader2 className={cn("animate-spin text-primary", sizeClasses[size])} />
       {message && <span className="ml-2 text-muted-foreground text-sm">{message}</span>}
     </div>
   );

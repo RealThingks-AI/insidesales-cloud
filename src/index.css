@@ -101,6 +101,19 @@ All colors MUST be HSL.
     --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
     --tracking-normal: 0em;
     --spacing: 0.25rem;
+    
+    /* Spacing tokens for consistency */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+    
+    /* Page header height */
+    --header-height: 4rem;
+    
+    /* Table row height */
+    --table-row-height: 2.5rem;
   }
 
   .dark {
