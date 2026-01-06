@@ -231,36 +231,24 @@ export const AttachRecordModal = ({
     (record.subtitle?.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const getStatusColor = (status?: string) => {
-    if (!status) return 'bg-muted text-muted-foreground';
+  const getStatusVariant = (status?: string): "default" | "secondary" | "destructive" | "outline" => {
+    if (!status) return 'secondary';
     
-    const colors: Record<string, string> = {
-      // Deal stages
-      'Lead': 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
-      'Qualified': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-      'RFQ': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-      'Discussions': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-      'Offered': 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-      'Won': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-      'Lost': 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-      // Lead statuses
-      'New': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-      'Contacted': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-      'Converted': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-      // Task/Meeting statuses
-      'open': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-      'in_progress': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
-      'completed': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-      'scheduled': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-      'cancelled': 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
-    };
+    const lowerStatus = status.toLowerCase();
     
-    return colors[status] || 'bg-muted text-muted-foreground';
+    // Success states
+    if (['won', 'completed', 'converted'].includes(lowerStatus)) return 'default';
+    // Error states
+    if (['lost', 'cancelled', 'dropped'].includes(lowerStatus)) return 'destructive';
+    // Active states
+    if (['qualified', 'rfq', 'discussions', 'offered', 'in_progress', 'scheduled', 'contacted', 'new'].includes(lowerStatus)) return 'outline';
+    
+    return 'secondary';
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md z-[60]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
@@ -333,7 +321,7 @@ export const AttachRecordModal = ({
                       )}
                     </div>
                     {record.status && (
-                      <Badge className={`text-xs ${getStatusColor(record.status)}`}>
+                      <Badge variant={getStatusVariant(record.status)} className="text-xs shrink-0">
                         {record.status}
                       </Badge>
                     )}
