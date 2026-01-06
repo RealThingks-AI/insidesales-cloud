@@ -248,7 +248,7 @@ export const AttachRecordModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md z-[60]">
+      <DialogContent className="max-w-lg z-[60] overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
@@ -298,12 +298,12 @@ export const AttachRecordModal = ({
               </p>
             </div>
           ) : (
-            <ScrollArea className="h-[300px] pr-4">
-              <div className="space-y-2">
+            <ScrollArea className="h-[300px]">
+              <div className="space-y-2 pr-3">
                 {filteredRecords.map((record) => (
                   <div
                     key={record.id}
-                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors overflow-hidden ${
                       selectedIds.has(record.id)
                         ? 'bg-primary/10 border-primary'
                         : 'bg-muted/30 border-transparent hover:bg-muted/50'
@@ -313,15 +313,16 @@ export const AttachRecordModal = ({
                     <Checkbox
                       checked={selectedIds.has(record.id)}
                       onCheckedChange={() => handleToggleSelect(record.id)}
+                      className="shrink-0"
                     />
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 overflow-hidden">
                       <p className="font-medium text-sm truncate">{record.name}</p>
                       {record.subtitle && (
                         <p className="text-xs text-muted-foreground truncate">{record.subtitle}</p>
                       )}
                     </div>
                     {record.status && (
-                      <Badge variant={getStatusVariant(record.status)} className="text-xs shrink-0">
+                      <Badge variant={getStatusVariant(record.status)} className="text-xs shrink-0 whitespace-nowrap">
                         {record.status}
                       </Badge>
                     )}
