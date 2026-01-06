@@ -35,6 +35,7 @@ export const defaultAccountColumns: AccountColumnConfig[] = [
   { field: 'account_owner', label: 'Account Owner', visible: true, order: 10 },
   { field: 'deal_count', label: 'Deals', visible: false, order: 11 },
   { field: 'contact_count', label: 'Contacts', visible: false, order: 12 },
+  { field: 'lead_count', label: 'Leads', visible: false, order: 13 },
 ];
 
 export const AccountColumnCustomizer = ({

@@ -52,6 +52,7 @@ export interface Account {
   modified_by?: string;
   deal_count?: number;
   contact_count?: number;
+  lead_count?: number;
 }
 interface AccountTableProps {
   showColumnCustomizer: boolean;
@@ -280,11 +281,26 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
         return acc;
       }, {} as Record<string, number>);
 
+      // Fetch lead counts by account_id
+      const { data: leadCounts } = await supabase
+        .from('leads')
+        .select('account_id')
+        .not('account_id', 'is', null);
+
+      // Calculate lead counts
+      const leadCountMap = (leadCounts || []).reduce((acc, l) => {
+        if (l.account_id) {
+          acc[l.account_id] = (acc[l.account_id] || 0) + 1;
+        }
+        return acc;
+      }, {} as Record<string, number>);
+
       // Merge actual counts into accounts (DB triggers will keep these in sync)
       const accountsWithCounts = (accountsData || []).map(account => ({
         ...account,
         contact_count: account.contact_count || contactCountMap[account.id] || 0,
         deal_count: account.deal_count || dealCountMap[account.id] || 0,
+        lead_count: leadCountMap[account.id] || 0,
       }));
 
       setAccounts(accountsWithCounts);
@@ -564,6 +580,8 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
                             <span className="text-center w-full block">{account.deal_count ?? 0}</span>
                           ) : column.field === 'contact_count' ? (
                             <span className="text-center w-full block">{account.contact_count ?? 0}</span>
+                          ) : column.field === 'lead_count' ? (
+                            <span className="text-center w-full block">{account.lead_count ?? 0}</span>
                           ) : column.field === 'tags' ? (account.tags && account.tags.length > 0 ? <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
