@@ -248,17 +248,17 @@ export const AttachRecordModal = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg z-[60] overflow-hidden">
-        <DialogHeader>
+      <DialogContent className="max-w-xl z-[60] flex flex-col max-h-[85vh]">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
             {title}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4 min-h-0 flex-1">
           {/* Search */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder={`Search ${recordType}s...`}
@@ -270,7 +270,7 @@ export const AttachRecordModal = ({
 
           {/* Select All */}
           {filteredRecords.length > 0 && (
-            <div className="flex items-center justify-between px-1">
+            <div className="flex items-center justify-between px-1 shrink-0">
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={selectedIds.size === filteredRecords.length && filteredRecords.length > 0}
@@ -298,42 +298,44 @@ export const AttachRecordModal = ({
               </p>
             </div>
           ) : (
-            <ScrollArea className="h-[300px]">
-              <div className="space-y-2 pr-3">
-                {filteredRecords.map((record) => (
-                  <div
-                    key={record.id}
-                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors overflow-hidden ${
-                      selectedIds.has(record.id)
-                        ? 'bg-primary/10 border-primary'
-                        : 'bg-muted/30 border-transparent hover:bg-muted/50'
-                    }`}
-                    onClick={() => handleToggleSelect(record.id)}
-                  >
-                    <Checkbox
-                      checked={selectedIds.has(record.id)}
-                      onCheckedChange={() => handleToggleSelect(record.id)}
-                      className="shrink-0"
-                    />
-                    <div className="flex-1 min-w-0 overflow-hidden">
-                      <p className="font-medium text-sm truncate">{record.name}</p>
-                      {record.subtitle && (
-                        <p className="text-xs text-muted-foreground truncate">{record.subtitle}</p>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <ScrollArea className="h-full max-h-[300px]">
+                <div className="space-y-2 pr-4">
+                  {filteredRecords.map((record) => (
+                    <div
+                      key={record.id}
+                      className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                        selectedIds.has(record.id)
+                          ? 'bg-primary/10 border-primary'
+                          : 'bg-muted/30 border-transparent hover:bg-muted/50'
+                      }`}
+                      onClick={() => handleToggleSelect(record.id)}
+                    >
+                      <Checkbox
+                        checked={selectedIds.has(record.id)}
+                        onCheckedChange={() => handleToggleSelect(record.id)}
+                        className="shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{record.name}</p>
+                        {record.subtitle && (
+                          <p className="text-xs text-muted-foreground truncate">{record.subtitle}</p>
+                        )}
+                      </div>
+                      {record.status && (
+                        <Badge variant={getStatusVariant(record.status)} className="text-xs shrink-0">
+                          {record.status}
+                        </Badge>
                       )}
                     </div>
-                    {record.status && (
-                      <Badge variant={getStatusVariant(record.status)} className="text-xs shrink-0 whitespace-nowrap">
-                        {record.status}
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
