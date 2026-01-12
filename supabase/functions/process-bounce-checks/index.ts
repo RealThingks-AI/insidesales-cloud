@@ -249,7 +249,8 @@ serve(async (req: Request) => {
         email_history:email_history_id (
           id,
           sent_at,
-          status
+          status,
+          sent_by
         )
       `)
       .eq('checked', false)
@@ -319,6 +320,22 @@ serve(async (req: Request) => {
           if (!error) {
             pendingBouncesFound++;
             bouncedPendingIds.push(check.id);
+            
+            // Create notification for bounce
+            if (emailHistory.sent_by) {
+              const { error: notifError } = await supabase
+                .from('notifications')
+                .insert({
+                  user_id: emailHistory.sent_by,
+                  message: `Email to ${check.recipient_email} could not be delivered - address invalid or doesn't exist`,
+                  notification_type: 'email_bounced',
+                  status: 'unread',
+                });
+              
+              if (notifError) {
+                console.warn(`Failed to create bounce notification:`, notifError);
+              }
+            }
           }
           
           results.push({

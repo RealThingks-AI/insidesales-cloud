@@ -28,6 +28,7 @@ import {
   ChevronDown,
   MailX,
   Info,
+  Reply,
 } from 'lucide-react';
 import {
   Dialog,
@@ -52,6 +53,9 @@ interface EmailHistoryItem {
   bounce_reason: string | null;
   bounced_at: string | null;
   is_valid_open: boolean | null;
+  reply_count: number | null;
+  replied_at: string | null;
+  last_reply_at: string | null;
 }
 
 interface EntityEmailHistoryProps {
@@ -150,7 +154,7 @@ export const EntityEmailHistory = ({ entityType, entityId }: EntityEmailHistoryP
     try {
       let query = supabase
         .from('email_history')
-        .select('id, subject, recipient_email, recipient_name, sender_email, body, status, sent_at, opened_at, open_count, unique_opens, bounce_type, bounce_reason, bounced_at, is_valid_open')
+        .select('id, subject, recipient_email, recipient_name, sender_email, body, status, sent_at, opened_at, open_count, unique_opens, bounce_type, bounce_reason, bounced_at, is_valid_open, reply_count, replied_at, last_reply_at')
         .order('sent_at', { ascending: false });
 
       if (entityType === 'contact') {
@@ -186,7 +190,7 @@ export const EntityEmailHistory = ({ entityType, entityId }: EntityEmailHistoryP
   }, [selectedEmail]);
 
   const getStatusBadge = (email: EmailHistoryItem) => {
-    const { status, bounce_type } = email;
+    const { status, bounce_type, reply_count } = email;
 
     if (status === 'bounced' || bounce_type) {
       const bounceInfo = getBounceExplanation(bounce_type, null);
@@ -194,6 +198,16 @@ export const EntityEmailHistory = ({ entityType, entityId }: EntityEmailHistoryP
         <Badge className="bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20">
           <XCircle className="h-3 w-3 mr-1" />
           {bounceInfo.title}
+        </Badge>
+      );
+    }
+
+    // Show replied status if there are replies
+    if (status === 'replied' || (reply_count && reply_count > 0)) {
+      return (
+        <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+          <Reply className="h-3 w-3 mr-1" />
+          Replied {reply_count && reply_count > 1 ? `(${reply_count})` : ''}
         </Badge>
       );
     }
