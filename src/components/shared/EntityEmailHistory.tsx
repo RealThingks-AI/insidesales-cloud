@@ -3,7 +3,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -13,6 +12,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
   Mail,
   Eye,
   Clock,
@@ -21,6 +25,9 @@ import {
   CheckCircle,
   Send,
   Users,
+  ChevronDown,
+  MailX,
+  Info,
 } from 'lucide-react';
 import {
   Dialog,
@@ -28,17 +35,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { toast } from 'sonner';
 
 interface EmailHistoryItem {
   id: string;
@@ -63,12 +59,91 @@ interface EntityEmailHistoryProps {
   entityId: string;
 }
 
+// Helper function to get user-friendly bounce explanation
+const getBounceExplanation = (bounceType: string | null, bounceReason: string | null) => {
+  if (bounceType === 'hard') {
+    return {
+      title: "Delivery Failed",
+      subtitle: "Email address doesn't exist",
+      description: "This email could not be delivered because the recipient's email address was not found or is invalid. Please verify the email address and try again with a correct one.",
+      Icon: MailX,
+      severity: 'error' as const,
+    };
+  }
+  if (bounceType === 'soft') {
+    return {
+      title: "Delivery Delayed",
+      subtitle: "Temporary delivery issue",
+      description: "This email couldn't be delivered due to a temporary issue (e.g., full mailbox, server busy). The system may retry automatically.",
+      Icon: AlertTriangle,
+      severity: 'warning' as const,
+    };
+  }
+  return {
+    title: "Delivery Failed",
+    subtitle: "Unable to deliver email",
+    description: "This email could not be delivered to the recipient. The email address may be invalid or the recipient's server rejected the message.",
+    Icon: XCircle,
+    severity: 'error' as const,
+  };
+};
+
+// Helper function to clean and parse technical bounce reasons
+const cleanBounceReason = (reason: string | null): { summary: string; technical: string | null } => {
+  if (!reason) return { summary: '', technical: null };
+  
+  // Strip HTML tags
+  let cleaned = reason.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  
+  // Common patterns to extract meaningful message
+  const patterns = [
+    /The email account that you tried to reach does not exist/i,
+    /address rejected/i,
+    /user unknown/i,
+    /mailbox not found/i,
+    /recipient rejected/i,
+    /no such user/i,
+    /invalid recipient/i,
+    /delivery.*failed/i,
+    /undeliverable/i,
+  ];
+  
+  // Check if it matches any pattern for a cleaner summary
+  for (const pattern of patterns) {
+    const match = cleaned.match(pattern);
+    if (match) {
+      return {
+        summary: "The recipient's email address was not found or is invalid.",
+        technical: cleaned,
+      };
+    }
+  }
+  
+  // If contains error codes, provide a generic summary
+  if (/^\d{3}\s+\d+\.\d+\.\d+/.test(cleaned) || /error code/i.test(cleaned)) {
+    return {
+      summary: "The email server rejected the message.",
+      technical: cleaned,
+    };
+  }
+  
+  // Return first sentence if reasonable length
+  const firstSentence = cleaned.split(/[.!?]/)[0];
+  if (firstSentence && firstSentence.length > 10 && firstSentence.length < 200) {
+    return {
+      summary: firstSentence + '.',
+      technical: cleaned !== firstSentence + '.' ? cleaned : null,
+    };
+  }
+  
+  return { summary: cleaned, technical: null };
+};
+
 export const EntityEmailHistory = ({ entityType, entityId }: EntityEmailHistoryProps) => {
   const [emails, setEmails] = useState<EmailHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedEmail, setSelectedEmail] = useState<EmailHistoryItem | null>(null);
-  const [markingBounced, setMarkingBounced] = useState<string | null>(null);
-  const [confirmBounceEmail, setConfirmBounceEmail] = useState<EmailHistoryItem | null>(null);
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState(false);
 
   const fetchEmails = async () => {
     setLoading(true);
@@ -103,54 +178,28 @@ export const EntityEmailHistory = ({ entityType, entityId }: EntityEmailHistoryP
     }
   }, [entityType, entityId]);
 
-  const handleMarkAsBounced = async (email: EmailHistoryItem) => {
-    setMarkingBounced(email.id);
-    try {
-      const { data, error } = await supabase.functions.invoke('mark-email-bounced', {
-        body: {
-          emailId: email.id,
-          bounceType: 'hard',
-          bounceReason: 'Manually marked as bounced - email delivery failed',
-        },
-      });
-
-      if (error) throw error;
-
-      toast.success('Email marked as bounced');
-      setConfirmBounceEmail(null);
-      fetchEmails(); // Refresh the list
-    } catch (error: any) {
-      console.error('Error marking email as bounced:', error);
-      toast.error('Failed to mark email as bounced');
-    } finally {
-      setMarkingBounced(null);
+  // Reset technical details view when dialog closes
+  useEffect(() => {
+    if (!selectedEmail) {
+      setShowTechnicalDetails(false);
     }
-  };
+  }, [selectedEmail]);
 
   const getStatusBadge = (email: EmailHistoryItem) => {
-    const { status, bounce_type, bounce_reason, is_valid_open, open_count } = email;
+    const { status, bounce_type } = email;
 
     if (status === 'bounced' || bounce_type) {
+      const bounceInfo = getBounceExplanation(bounce_type, null);
       return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger>
-              <Badge className="bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20">
-                <XCircle className="h-3 w-3 mr-1" />
-                Bounced
-              </Badge>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="font-semibold">Bounce type: {bounce_type || 'unknown'}</p>
-              {bounce_reason && <p className="text-xs mt-1">{bounce_reason}</p>}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Badge className="bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20">
+          <XCircle className="h-3 w-3 mr-1" />
+          {bounceInfo.title}
+        </Badge>
       );
     }
 
     if (status === 'opened') {
-      if (is_valid_open === false) {
+      if (email.is_valid_open === false) {
         return (
           <TooltipProvider>
             <Tooltip>
@@ -194,10 +243,11 @@ export const EntityEmailHistory = ({ entityType, entityId }: EntityEmailHistoryP
 
   const getOpenCountDisplay = (email: EmailHistoryItem) => {
     if (email.status === 'bounced' || email.bounce_type) {
+      const bounceInfo = getBounceExplanation(email.bounce_type, null);
       return (
         <span className="flex items-center gap-1 text-destructive">
           <XCircle className="h-3 w-3" />
-          Bounced
+          {bounceInfo.title}
         </span>
       );
     }
@@ -314,54 +364,118 @@ export const EntityEmailHistory = ({ entityType, entityId }: EntityEmailHistoryP
           </DialogHeader>
           
           {selectedEmail && (
-            <div className="space-y-4">
+            <div className="space-y-5">
+              {/* Subject and Status */}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Subject</p>
+                  <p className="text-base font-medium mt-1">{selectedEmail.subject}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status:</span>
+                  {getStatusBadge(selectedEmail)}
+                </div>
+              </div>
+
+              {/* From/To Grid */}
+              <div className="grid grid-cols-2 gap-4 p-3 bg-muted/30 rounded-lg">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">From</p>
+                  <p className="text-sm mt-0.5">{selectedEmail.sender_email}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">To</p>
+                  <p className="text-sm mt-0.5">{selectedEmail.recipient_name || selectedEmail.recipient_email}</p>
+                </div>
+              </div>
+
+              {/* Dates Grid */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground">Subject</p>
-                  <p className="text-sm">{selectedEmail.subject}</p>
+                  <p className="text-xs font-medium text-muted-foreground">Sent</p>
+                  <p className="text-sm mt-0.5">{format(new Date(selectedEmail.sent_at), 'dd/MM/yyyy HH:mm')}</p>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Status</p>
-                  <div className="mt-1">{getStatusBadge(selectedEmail)}</div>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">To</p>
-                  <p className="text-sm">{selectedEmail.recipient_name || selectedEmail.recipient_email}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">From</p>
-                  <p className="text-sm">{selectedEmail.sender_email}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">Sent At</p>
-                  <p className="text-sm">{format(new Date(selectedEmail.sent_at), 'dd/MM/yyyy HH:mm')}</p>
-                </div>
-                {selectedEmail.opened_at && !selectedEmail.bounce_type && (
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">First Opened</p>
-                    <p className="text-sm">{format(new Date(selectedEmail.opened_at), 'dd/MM/yyyy HH:mm')}</p>
-                  </div>
-                )}
                 {selectedEmail.bounced_at && (
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Bounced At</p>
-                    <p className="text-sm text-destructive">{format(new Date(selectedEmail.bounced_at), 'dd/MM/yyyy HH:mm')}</p>
+                    <p className="text-xs font-medium text-muted-foreground">Failed</p>
+                    <p className="text-sm mt-0.5 text-destructive">{format(new Date(selectedEmail.bounced_at), 'dd/MM/yyyy HH:mm')}</p>
+                  </div>
+                )}
+                {selectedEmail.opened_at && !selectedEmail.bounce_type && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">First Opened</p>
+                    <p className="text-sm mt-0.5">{format(new Date(selectedEmail.opened_at), 'dd/MM/yyyy HH:mm')}</p>
                   </div>
                 )}
               </div>
 
-              {selectedEmail.bounce_type && (
-                <div className="bg-destructive/10 border border-destructive/20 rounded-md p-3">
-                  <div className="flex items-center gap-2 text-destructive font-medium">
-                    <XCircle className="h-4 w-4" />
-                    Email Bounced ({selectedEmail.bounce_type})
+              {/* Bounce Information - User Friendly */}
+              {selectedEmail.bounce_type && (() => {
+                const bounceInfo = getBounceExplanation(selectedEmail.bounce_type, selectedEmail.bounce_reason);
+                const cleanedReason = cleanBounceReason(selectedEmail.bounce_reason);
+                const BounceIcon = bounceInfo.Icon;
+                
+                return (
+                  <div className={`rounded-lg border p-4 ${
+                    bounceInfo.severity === 'error' 
+                      ? 'bg-destructive/5 border-destructive/20' 
+                      : 'bg-yellow-50 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-800/30'
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2 rounded-full ${
+                        bounceInfo.severity === 'error'
+                          ? 'bg-destructive/10'
+                          : 'bg-yellow-100 dark:bg-yellow-900/30'
+                      }`}>
+                        <BounceIcon className={`h-5 w-5 ${
+                          bounceInfo.severity === 'error'
+                            ? 'text-destructive'
+                            : 'text-yellow-600 dark:text-yellow-400'
+                        }`} />
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <div>
+                          <h4 className={`font-semibold ${
+                            bounceInfo.severity === 'error'
+                              ? 'text-destructive'
+                              : 'text-yellow-700 dark:text-yellow-300'
+                          }`}>
+                            {bounceInfo.title}
+                          </h4>
+                          <p className={`text-sm ${
+                            bounceInfo.severity === 'error'
+                              ? 'text-destructive/80'
+                              : 'text-yellow-600 dark:text-yellow-400'
+                          }`}>
+                            {bounceInfo.subtitle}
+                          </p>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {bounceInfo.description}
+                        </p>
+                        
+                        {/* Technical Details Collapsible */}
+                        {cleanedReason.technical && (
+                          <Collapsible open={showTechnicalDetails} onOpenChange={setShowTechnicalDetails}>
+                            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mt-2">
+                              <ChevronDown className={`h-3 w-3 transition-transform ${showTechnicalDetails ? 'rotate-180' : ''}`} />
+                              <Info className="h-3 w-3" />
+                              View technical details
+                            </CollapsibleTrigger>
+                            <CollapsibleContent className="mt-2">
+                              <div className="text-xs font-mono bg-muted/50 rounded p-2 text-muted-foreground break-all">
+                                {cleanedReason.technical}
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  {selectedEmail.bounce_reason && (
-                    <p className="text-sm text-destructive/80 mt-1">{selectedEmail.bounce_reason}</p>
-                  )}
-                </div>
-              )}
+                );
+              })()}
 
+              {/* Open Stats - Only show for non-bounced emails */}
               {!selectedEmail.bounce_type && (
                 <div className="flex justify-center gap-4">
                   <Card>
@@ -385,8 +499,9 @@ export const EntityEmailHistory = ({ entityType, entityId }: EntityEmailHistoryP
                 </div>
               )}
 
+              {/* Suspicious Activity Warning */}
               {selectedEmail.is_valid_open === false && !selectedEmail.bounce_type && (
-                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md p-3">
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
                   <div className="flex items-center gap-2 text-yellow-700 dark:text-yellow-300 font-medium">
                     <AlertTriangle className="h-4 w-4" />
                     Suspicious Activity Detected
@@ -397,63 +512,20 @@ export const EntityEmailHistory = ({ entityType, entityId }: EntityEmailHistoryP
                 </div>
               )}
 
+              {/* Email Body */}
               {selectedEmail.body && (
                 <div>
-                  <p className="text-sm font-medium text-muted-foreground mb-2">Email Body</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Message</p>
                   <div 
-                    className="border rounded-md p-4 bg-muted/30 text-sm max-h-[200px] overflow-y-auto"
+                    className="border rounded-lg p-4 bg-background text-sm max-h-[200px] overflow-y-auto"
                     dangerouslySetInnerHTML={{ __html: selectedEmail.body }}
                   />
-                </div>
-              )}
-
-              {/* Mark as Bounced button - only show for non-bounced emails */}
-              {!selectedEmail.bounce_type && selectedEmail.status !== 'bounced' && (
-                <div className="pt-4 border-t">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmBounceEmail(selectedEmail);
-                    }}
-                    className="w-full"
-                  >
-                    <XCircle className="h-4 w-4 mr-2" />
-                    Mark as Bounced
-                  </Button>
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
-                    Use this if you received a bounce notification for this email
-                  </p>
                 </div>
               )}
             </div>
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Confirm bounce dialog */}
-      <AlertDialog open={!!confirmBounceEmail} onOpenChange={() => setConfirmBounceEmail(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Mark Email as Bounced?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will mark the email as bounced and reset any open tracking data. 
-              If the contact's engagement score was increased by false opens, it will be corrected.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => confirmBounceEmail && handleMarkAsBounced(confirmBounceEmail)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={!!markingBounced}
-            >
-              {markingBounced ? 'Marking...' : 'Mark as Bounced'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 };
