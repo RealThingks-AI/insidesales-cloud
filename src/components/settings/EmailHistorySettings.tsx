@@ -209,6 +209,21 @@ const EmailHistorySettings = () => {
     
     setRetryingEmailId(email.id);
     try {
+      // Determine entity type and id for proper association
+      let entityType: string | undefined;
+      let entityId: string | undefined;
+      
+      if (email.contact_id) {
+        entityType = 'contact';
+        entityId = email.contact_id;
+      } else if (email.lead_id) {
+        entityType = 'lead';
+        entityId = email.lead_id;
+      } else if (email.account_id) {
+        entityType = 'account';
+        entityId = email.account_id;
+      }
+      
       const { data, error } = await supabase.functions.invoke('send-email', {
         body: {
           to: email.recipient_email,
@@ -216,9 +231,8 @@ const EmailHistorySettings = () => {
           from: email.sender_email,
           subject: email.subject,
           body: email.body,
-          contactId: email.contact_id,
-          leadId: email.lead_id,
-          accountId: email.account_id,
+          entityType,
+          entityId,
         }
       });
 
