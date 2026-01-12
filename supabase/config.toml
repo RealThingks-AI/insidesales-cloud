@@ -1,7 +1,7 @@
 project_id = "narvjcteixgjclvjvlbn"
 
 [functions.send-email]
-verify_jwt = true
+verify_jwt = false
 
 [functions.user-admin]
 verify_jwt = false
@@ -33,8 +33,23 @@ verify_jwt = false
 [functions.track-email-open]
 verify_jwt = false
 
-[functions.track-email-click]
+[functions.update-teams-meeting]
 verify_jwt = false
 
-[functions.update-teams-meeting]
+[functions.send-task-reminders]
+verify_jwt = false
+
+[functions.send-task-notification]
+verify_jwt = false
+
+[functions.keep-alive]
+verify_jwt = false
+
+[functions.mark-email-bounced]
+verify_jwt = false
+
+[functions.sync-email-bounces]
+verify_jwt = false
+
+[functions.process-bounce-checks]
 verify_jwt = false

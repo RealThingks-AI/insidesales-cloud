@@ -3,13 +3,17 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import SecurityEnhancedApp from "@/components/SecurityEnhancedApp";
 import { AppSidebar } from "@/components/AppSidebar";
 import PageAccessGuard from "@/components/PageAccessGuard";
-import { useState, lazy, Suspense } from "react";
+import { useState, lazy, Suspense, useEffect, useRef } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { supabase } from "@/integrations/supabase/client";
+import { RealtimeSync } from "@/components/RealtimeSync";
 
 // Lazy load all page components for code-splitting
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -25,16 +29,26 @@ const Notifications = lazy(() => import("./pages/Notifications"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const StickyHeaderTest = lazy(() => import("./pages/StickyHeaderTest"));
 
-// QueryClient with optimized defaults to reduce refetching
+// Build version for cache busting on deployments
+const CACHE_BUSTER = 'v1.0.0';
+
+// QueryClient with optimized defaults - now with realtime sync
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 30 * 1000, // 30 seconds - data stays fresh, no refetch on mount
-      gcTime: 10 * 60 * 1000, // 10 minutes cache
-      refetchOnWindowFocus: false, // Don't refetch when user switches tabs
-      retry: 1, // Reduce retries to avoid long waits
+      staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh
+      gcTime: 24 * 60 * 60 * 1000, // 24 hours cache
+      refetchOnWindowFocus: true, // Refetch when user returns to tab (only if stale)
+      refetchOnMount: true, // Refetch on navigation (only if stale)
+      retry: 1,
     },
   },
+});
+
+// Create persister for localStorage caching across page refreshes
+const persister = createSyncStoragePersister({
+  storage: window.localStorage,
+  key: 'rt-crm-cache',
 });
 
 // Loading fallback for auth page (full screen)
@@ -84,9 +98,73 @@ const FixedSidebarLayout = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
+// Hook to clear cache on logout and prefetch routes
+const useAppSetup = (isAuthenticated: boolean) => {
+  const hasPrefetched = useRef(false);
+  const prevUserId = useRef<string | null>(null);
+  
+  // Clear cache on logout
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        // Clear all cached data when user signs out
+        localStorage.removeItem('rt-crm-cache');
+        queryClient.clear();
+      }
+      
+      // Clear cache if user changed (different user logged in)
+      const newUserId = session?.user?.id || null;
+      if (prevUserId.current && newUserId && prevUserId.current !== newUserId) {
+        localStorage.removeItem('rt-crm-cache');
+        queryClient.clear();
+      }
+      prevUserId.current = newUserId;
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+  
+  // Prefetch route chunks after authentication
+  useEffect(() => {
+    if (isAuthenticated && !hasPrefetched.current) {
+      hasPrefetched.current = true;
+      
+      // Prefetch route chunks in background after a short delay
+      const prefetch = () => {
+        // Use requestIdleCallback if available, otherwise setTimeout
+        const scheduleImport = (importFn: () => Promise<any>) => {
+          if ('requestIdleCallback' in window) {
+            (window as any).requestIdleCallback(() => importFn().catch(() => {}));
+          } else {
+            setTimeout(() => importFn().catch(() => {}), 100);
+          }
+        };
+        
+        // Prefetch main route chunks
+        scheduleImport(() => import("./pages/Accounts"));
+        scheduleImport(() => import("./pages/Contacts"));
+        scheduleImport(() => import("./pages/Leads"));
+        scheduleImport(() => import("./pages/Meetings"));
+        scheduleImport(() => import("./pages/DealsPage"));
+        scheduleImport(() => import("./pages/Tasks"));
+        scheduleImport(() => import("./pages/Settings"));
+        scheduleImport(() => import("./pages/Notifications"));
+      };
+      
+      // Start prefetching after initial render settles
+      setTimeout(prefetch, 1000);
+    }
+  }, [isAuthenticated]);
+};
+
 // Protected Route Component with Page Access Control
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { user, loading } = useAuth();
+  
+  // Setup app (cache clearing, route prefetch)
+  useAppSetup(!!user);
 
   if (loading) {
     return (
@@ -105,8 +183,10 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
   // Use FixedSidebarLayout for all protected routes with Page Access Guard
   // Suspense is inside layout so sidebar stays visible while content loads
+  // RealtimeSync enables live updates across all users
   return (
     <FixedSidebarLayout>
+      <RealtimeSync />
       <PageAccessGuard>
         <Suspense fallback={<ContentLoader />}>
           {children}
@@ -211,7 +291,14 @@ const AppRouter = () => (
 );
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
+  <PersistQueryClientProvider
+    client={queryClient}
+    persistOptions={{
+      persister,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      buster: CACHE_BUSTER,
+    }}
+  >
     <SecurityEnhancedApp>
       <TooltipProvider>
         <Toaster />
@@ -219,7 +306,7 @@ const App = () => (
         <AppRouter />
       </TooltipProvider>
     </SecurityEnhancedApp>
-  </QueryClientProvider>
+  </PersistQueryClientProvider>
 );
 
 export default App;

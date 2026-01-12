@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, forwardRef, useImperativeHandle } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useCRUDAudit } from "@/hooks/useCRUDAudit";
@@ -22,11 +22,11 @@ import { AccountDeleteConfirmDialog } from "./AccountDeleteConfirmDialog";
 import { AccountDetailModal } from "./accounts/AccountDetailModal";
 import { HighlightedText } from "./shared/HighlightedText";
 import { getAccountStatusColor } from "@/utils/accountStatusUtils";
+import { moveFieldToEnd } from "@/utils/columnOrderUtils";
+import { formatDateTimeStandard } from "@/utils/formatUtils";
 import { ClearFiltersButton } from "./shared/ClearFiltersButton";
 import { TableSkeleton } from "./shared/Skeletons";
-import { TaskModal } from "./tasks/TaskModal";
-import { useTasks } from "@/hooks/useTasks";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 // Export ref interface for parent component
 export interface AccountTableRef {
@@ -81,10 +81,9 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
   const {
     logDelete
   } = useCRUDAudit();
+  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [filteredAccounts, setFilteredAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -110,24 +109,26 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
   const [ownerFilter, setOwnerFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
 
-  // Fetch current user ID for "me" filtering
+  // Use cached auth instead of fetching user each time
+  const { data: authData } = useQuery({
+    queryKey: ['current-user'],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      return user;
+    },
+    staleTime: 10 * 60 * 1000, // 10 minutes - user rarely changes
+    gcTime: 30 * 60 * 1000,
+  });
+
+  // Set current user ID from cached auth
   useEffect(() => {
-    const fetchCurrentUser = async () => {
-      const {
-        data: {
-          user
-        }
-      } = await supabase.auth.getUser();
-      if (user) {
-        setCurrentUserId(user.id);
-        // If owner=me in URL, set the owner filter to current user's ID
-        if (ownerParam === 'me') {
-          setOwnerFilter(user.id);
-        }
+    if (authData) {
+      setCurrentUserId(authData.id);
+      if (ownerParam === 'me') {
+        setOwnerFilter(authData.id);
       }
-    };
-    fetchCurrentUser();
-  }, [ownerParam]);
+    }
+  }, [authData, ownerParam]);
 
   // Sync statusFilter when initialStatus prop changes (from URL)
   useEffect(() => {
@@ -147,44 +148,27 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
-  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<string | null>('company_name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [viewingAccount, setViewingAccount] = useState<Account | null>(null);
+  const [detailModalDefaultTab, setDetailModalDefaultTab] = useState("overview");
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
-  const [taskModalOpen, setTaskModalOpen] = useState(false);
-  const [taskAccountId, setTaskAccountId] = useState<string | null>(null);
-
-  const { createTask } = useTasks();
+  const navigate = useNavigate();
 
   const handleCreateTask = (account: Account) => {
-    setTaskAccountId(account.id);
-    setTaskModalOpen(true);
+    const params = new URLSearchParams({
+      create: '1',
+      module: 'accounts',
+      recordId: account.id,
+      recordName: encodeURIComponent(account.company_name || 'Account'),
+      return: '/accounts',
+      returnViewId: account.id,
+    });
+    navigate(`/tasks?${params.toString()}`);
   };
 
-  // Handle viewId from URL (from global search)
-  const viewId = searchParams.get('viewId');
-  useEffect(() => {
-    if (viewId && accounts.length > 0) {
-      const accountToView = accounts.find(a => a.id === viewId);
-      if (accountToView) {
-        setViewingAccount(accountToView);
-        setShowDetailModal(true);
-        // Clear the viewId from URL after opening
-        setSearchParams(prev => {
-          prev.delete('viewId');
-          return prev;
-        }, {
-          replace: true
-        });
-      }
-    }
-  }, [viewId, accounts, setSearchParams]);
-
-  // Expose handleBulkDelete to parent via ref
-  useImperativeHandle(ref, () => ({
-    handleBulkDelete
-  }), [selectedAccounts, accounts]);
+  // viewId effect is moved below the accounts query
 
   // Fetch all profiles for owner dropdown
   const {
@@ -196,11 +180,85 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
         data
       } = await supabase.from('profiles').select('id, full_name');
       return data || [];
-    }
+    },
+    staleTime: 10 * 60 * 1000, // 10 minutes
   });
+
+  // Fetch accounts with React Query caching - PARALLELIZED counts
+  const { data: accounts = [], isLoading: loading, refetch: refetchAccounts } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: async () => {
+      // Run all queries in parallel for faster loading
+      const [accountsResult, contactCountsResult, dealCountsResult, leadCountsResult] = await Promise.all([
+        supabase.from('accounts').select('*').order('created_at', { ascending: false }),
+        supabase.from('contacts').select('account_id').not('account_id', 'is', null),
+        supabase.from('deals').select('account_id').not('account_id', 'is', null),
+        supabase.from('leads').select('account_id').not('account_id', 'is', null),
+      ]);
+
+      if (accountsResult.error) throw accountsResult.error;
+
+      // Calculate counts from parallel results
+      const contactCountMap = (contactCountsResult.data || []).reduce((acc, c) => {
+        if (c.account_id) acc[c.account_id] = (acc[c.account_id] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const dealCountMap = (dealCountsResult.data || []).reduce((acc, d) => {
+        if (d.account_id) acc[d.account_id] = (acc[d.account_id] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const leadCountMap = (leadCountsResult.data || []).reduce((acc, l) => {
+        if (l.account_id) acc[l.account_id] = (acc[l.account_id] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      // Merge counts into accounts
+      return (accountsResult.data || []).map(account => ({
+        ...account,
+        contact_count: account.contact_count || contactCountMap[account.id] || 0,
+        deal_count: account.deal_count || dealCountMap[account.id] || 0,
+        lead_count: leadCountMap[account.id] || 0,
+      })) as Account[];
+    },
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+
+  const fetchAccounts = () => {
+    refetchAccounts();
+  };
+
+  // Handle viewId and tab from URL (from global search or return from Tasks)
+  const viewId = searchParams.get('viewId');
+  const tabParam = searchParams.get('tab');
   useEffect(() => {
-    fetchAccounts();
-  }, []);
+    if (viewId && accounts.length > 0) {
+      const accountToView = accounts.find(a => a.id === viewId);
+      if (accountToView) {
+        setViewingAccount(accountToView);
+        // Set the tab if provided (e.g., returning from Tasks module)
+        if (tabParam) {
+          setDetailModalDefaultTab(tabParam);
+        }
+        setShowDetailModal(true);
+        // Clear the viewId and tab from URL after opening
+        setSearchParams(prev => {
+          prev.delete('viewId');
+          prev.delete('tab');
+          return prev;
+        }, {
+          replace: true
+        });
+      }
+    }
+  }, [viewId, tabParam, accounts, setSearchParams]);
+
+  // Expose handleBulkDelete to parent via ref
+  useImperativeHandle(ref, () => ({
+    handleBulkDelete
+  }), [selectedAccounts, accounts]);
+
   useEffect(() => {
     const searchLower = searchTerm.toLowerCase();
     let filtered = accounts.filter(account => account.company_name?.toLowerCase().includes(searchLower) || account.industry?.toLowerCase().includes(searchLower) || account.country?.toLowerCase().includes(searchLower) || account.email?.toLowerCase().includes(searchLower) || account.phone?.toLowerCase().includes(searchLower) || account.website?.toLowerCase().includes(searchLower) || account.notes?.toLowerCase().includes(searchLower) || account.company_type?.toLowerCase().includes(searchLower) || account.region?.toLowerCase().includes(searchLower) || account.tags?.some(tag => tag.toLowerCase().includes(searchLower)));
@@ -231,6 +289,7 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
     setFilteredAccounts(filtered);
     setCurrentPage(1);
   }, [accounts, searchTerm, statusFilter, ownerFilter, tagFilter, sortField, sortDirection]);
+  
   const handleSort = (field: string) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -241,78 +300,6 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
   };
   const getSortIcon = (field: string) => {
     return null; // Hide sort icons but keep sorting on click
-  };
-  const fetchAccounts = async () => {
-    try {
-      setLoading(true);
-      const {
-        data: accountsData,
-        error
-      } = await supabase.from('accounts').select('*').order('created_at', {
-        ascending: false
-      });
-      if (error) throw error;
-
-      // Fetch actual contact counts per account
-      const { data: contactCounts } = await supabase
-        .from('contacts')
-        .select('account_id')
-        .not('account_id', 'is', null);
-
-      // Calculate contact counts
-      const contactCountMap = (contactCounts || []).reduce((acc, c) => {
-        if (c.account_id) {
-          acc[c.account_id] = (acc[c.account_id] || 0) + 1;
-        }
-        return acc;
-      }, {} as Record<string, number>);
-
-      // Fetch deal counts by account_id (now using proper FK)
-      const { data: dealCounts } = await supabase
-        .from('deals')
-        .select('account_id')
-        .not('account_id', 'is', null);
-
-      // Calculate deal counts
-      const dealCountMap = (dealCounts || []).reduce((acc, d) => {
-        if (d.account_id) {
-          acc[d.account_id] = (acc[d.account_id] || 0) + 1;
-        }
-        return acc;
-      }, {} as Record<string, number>);
-
-      // Fetch lead counts by account_id
-      const { data: leadCounts } = await supabase
-        .from('leads')
-        .select('account_id')
-        .not('account_id', 'is', null);
-
-      // Calculate lead counts
-      const leadCountMap = (leadCounts || []).reduce((acc, l) => {
-        if (l.account_id) {
-          acc[l.account_id] = (acc[l.account_id] || 0) + 1;
-        }
-        return acc;
-      }, {} as Record<string, number>);
-
-      // Merge actual counts into accounts (DB triggers will keep these in sync)
-      const accountsWithCounts = (accountsData || []).map(account => ({
-        ...account,
-        contact_count: account.contact_count || contactCountMap[account.id] || 0,
-        deal_count: account.deal_count || dealCountMap[account.id] || 0,
-        lead_count: leadCountMap[account.id] || 0,
-      }));
-
-      setAccounts(accountsWithCounts);
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to fetch accounts",
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(false);
-    }
   };
   const handleDelete = async () => {
     if (!accountToDelete?.id) return;
@@ -435,7 +422,10 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
   const {
     displayNames
   } = useUserDisplayNames(ownerIds);
-  const visibleColumns = localColumns.filter(col => col.visible);
+  const visibleColumns = moveFieldToEnd(
+    localColumns.filter((col) => col.visible).sort((a, b) => a.order - b.order),
+    "account_owner",
+  );
   const pageAccounts = getCurrentPageAccounts();
 
   // Check if any filters are active
@@ -561,6 +551,7 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
                     {visibleColumns.map(column => <TableCell key={column.field} className={`${column.field === 'company_name' || column.field === 'email' ? 'text-left' : 'text-center'} px-4 py-3 align-middle whitespace-nowrap overflow-hidden text-ellipsis max-w-[200px]`}>
                         {column.field === 'company_name' ? <button onClick={() => {
                     setViewingAccount(account);
+                    setDetailModalDefaultTab("overview");
                     setShowDetailModal(true);
                   }} className="text-primary hover:underline font-medium text-left truncate">
                               <HighlightedText text={account.company_name} highlight={searchTerm} />
@@ -577,11 +568,38 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
                               <span className="text-center text-muted-foreground w-full block">-</span>
                             )
                           ) : column.field === 'deal_count' ? (
-                            <span className="text-center w-full block">{account.deal_count ?? 0}</span>
+                            <button 
+                              onClick={() => {
+                                setViewingAccount(account);
+                                setDetailModalDefaultTab("associations");
+                                setShowDetailModal(true);
+                              }}
+                              className="text-center w-full block text-primary hover:underline cursor-pointer"
+                            >
+                              {account.deal_count ?? 0}
+                            </button>
                           ) : column.field === 'contact_count' ? (
-                            <span className="text-center w-full block">{account.contact_count ?? 0}</span>
+                            <button 
+                              onClick={() => {
+                                setViewingAccount(account);
+                                setDetailModalDefaultTab("associations");
+                                setShowDetailModal(true);
+                              }}
+                              className="text-center w-full block text-primary hover:underline cursor-pointer"
+                            >
+                              {account.contact_count ?? 0}
+                            </button>
                           ) : column.field === 'lead_count' ? (
-                            <span className="text-center w-full block">{account.lead_count ?? 0}</span>
+                            <button 
+                              onClick={() => {
+                                setViewingAccount(account);
+                                setDetailModalDefaultTab("associations");
+                                setShowDetailModal(true);
+                              }}
+                              className="text-center w-full block text-primary hover:underline cursor-pointer"
+                            >
+                              {account.lead_count ?? 0}
+                            </button>
                           ) : column.field === 'tags' ? (account.tags && account.tags.length > 0 ? <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
@@ -628,6 +646,12 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
                           ) : column.field === 'email' ? (
                             account.email ? (
                               <HighlightedText text={account.email} highlight={searchTerm} />
+                            ) : (
+                              <span className="text-center text-muted-foreground w-full block">-</span>
+                            )
+                          ) : column.field === 'created_at' || column.field === 'updated_at' ? (
+                            account[column.field as keyof Account] ? (
+                              <span className="text-sm">{formatDateTimeStandard(account[column.field as keyof Account] as string)}</span>
                             ) : (
                               <span className="text-center text-muted-foreground w-full block">-</span>
                             )
@@ -720,18 +744,22 @@ const AccountTable = forwardRef<AccountTableRef, AccountTableProps>(({
       setAccountToDelete(null);
     }} isMultiple={false} count={1} />
 
-      <AccountDetailModal open={showDetailModal} onOpenChange={setShowDetailModal} account={viewingAccount} onUpdate={fetchAccounts} onEdit={account => {
-      setShowDetailModal(false);
-      setEditingAccount(account);
-      setShowModal(true);
-    }} />
-
-      <TaskModal
-        open={taskModalOpen}
-        onOpenChange={setTaskModalOpen}
-        onSubmit={createTask}
-        context={taskAccountId ? { module: 'accounts', recordId: taskAccountId, locked: true } : undefined}
+      <AccountDetailModal 
+        open={showDetailModal} 
+        onOpenChange={(open) => {
+          setShowDetailModal(open);
+          if (!open) setDetailModalDefaultTab("overview");
+        }} 
+        account={viewingAccount} 
+        onUpdate={fetchAccounts} 
+        onEdit={account => {
+          setShowDetailModal(false);
+          setEditingAccount(account);
+          setShowModal(true);
+        }}
+        defaultTab={detailModalDefaultTab}
       />
+
     </div>;
 });
 AccountTable.displayName = "AccountTable";

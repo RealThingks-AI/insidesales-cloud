@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { X, ChevronDown, Plus, Loader2 } from "lucide-react";
 import { DuplicateWarning } from "./shared/DuplicateWarning";
+import { MergeRecordsModal } from "./shared/MergeRecordsModal";
 import { AccountModal } from "./AccountModal";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -50,23 +51,9 @@ const contactSchema = z.object({
     })
     .optional()
     .or(z.literal("")),
-  website: z.string()
-    .refine((val) => {
-      if (!val) return true;
-      const normalized = normalizeUrl(val);
-      try {
-        new URL(normalized);
-        return true;
-      } catch {
-        return false;
-      }
-    }, {
-      message: "Please enter a valid website URL (e.g., company.com or https://company.com)",
-    })
-    .optional()
-    .or(z.literal("")),
   contact_source: z.string().optional(),
   description: z.string().max(1000, "Description must be less than 1000 characters").optional(),
+  contact_owner: z.string().optional(),
 });
 
 type ContactFormData = z.infer<typeof contactSchema>;
@@ -80,10 +67,7 @@ interface Contact {
   email?: string;
   phone_no?: string;
   linkedin?: string;
-  website?: string;
   contact_source?: string;
-  industry?: string;
-  region?: string;
   description?: string;
   tags?: string[];
 }
@@ -127,6 +111,11 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
   const [accountSearch, setAccountSearch] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [users, setUsers] = useState<{ id: string; full_name: string | null }[]>([]);
+  
+  // Merge modal state
+  const [mergeModalOpen, setMergeModalOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState<string>("");
 
   // Handler for when a new account is created
   const handleAccountCreated = (newAccount: Account) => {
@@ -176,24 +165,28 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
       linkedin: "",
       contact_source: "",
       description: "",
+      contact_owner: "",
     },
   });
 
-  // Fetch accounts for dropdown
+  // Fetch accounts and users for dropdowns
   useEffect(() => {
-    const fetchAccounts = async () => {
-      const { data, error } = await supabase
-        .from('accounts')
-        .select('id, company_name')
-        .order('company_name', { ascending: true });
+    const fetchData = async () => {
+      const [accountsResult, usersResult] = await Promise.all([
+        supabase.from('accounts').select('id, company_name').order('company_name', { ascending: true }),
+        supabase.from('profiles').select('id, full_name').order('full_name', { ascending: true })
+      ]);
       
-      if (!error && data) {
-        setAccounts(data);
+      if (!accountsResult.error && accountsResult.data) {
+        setAccounts(accountsResult.data);
+      }
+      if (!usersResult.error && usersResult.data) {
+        setUsers(usersResult.data);
       }
     };
     
     if (open) {
-      fetchAccounts();
+      fetchData();
     }
   }, [open]);
 
@@ -208,6 +201,7 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
         linkedin: contact.linkedin || "",
         contact_source: contact.contact_source || "",
         description: contact.description || "",
+        contact_owner: (contact as any).contact_owner || "",
       });
       setSelectedTags(contact.tags || []);
     } else {
@@ -220,6 +214,7 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
         linkedin: "",
         contact_source: "",
         description: "",
+        contact_owner: "",
       });
       setSelectedTags([]);
     }
@@ -269,13 +264,12 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
         email: data.email || null,
         phone_no: data.phone_no || null,
         linkedin: data.linkedin ? normalizeUrl(data.linkedin) : null,
-        website: data.website ? normalizeUrl(data.website) : null,
         contact_source: data.contact_source || null,
         description: data.description || null,
         tags: selectedTags,
         created_by: user.data.user.id,
         modified_by: user.data.user.id,
-        contact_owner: user.data.user.id,
+        contact_owner: data.contact_owner || user.data.user.id,
       };
 
       if (contact) {
@@ -334,7 +328,7 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" disableOutsidePointerEvents={false}>
         <DialogHeader>
           <DialogTitle>
             {contact ? "Edit Contact" : "Add New Contact"}
@@ -345,7 +339,15 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
             {/* Duplicate Warning */}
             {!contact && duplicates.length > 0 && (
-              <DuplicateWarning duplicates={duplicates} entityType="contact" />
+              <DuplicateWarning 
+                duplicates={duplicates} 
+                entityType="contact"
+                onMerge={(duplicateId) => {
+                  setMergeTargetId(duplicateId);
+                  setMergeModalOpen(true);
+                }}
+                preventCreation={duplicates.some(d => d.matchType === "exact")}
+              />
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -517,6 +519,31 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="contact_owner"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Contact Owner</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select owner..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {users.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.full_name || 'Unknown User'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             {/* Tags Multi-select */}
@@ -616,6 +643,24 @@ export const ContactModal = ({ open, onOpenChange, contact, onSuccess }: Contact
         onSuccess={() => {}}
         onCreated={handleAccountCreated}
       />
+
+      {/* Merge Modal */}
+      {mergeTargetId && (
+        <MergeRecordsModal
+          open={mergeModalOpen}
+          onOpenChange={(open) => {
+            setMergeModalOpen(open);
+            if (!open) setMergeTargetId("");
+          }}
+          entityType="contacts"
+          sourceId=""
+          targetId={mergeTargetId}
+          onSuccess={() => {
+            onSuccess();
+            onOpenChange(false);
+          }}
+        />
+      )}
     </Dialog>
   );
 };

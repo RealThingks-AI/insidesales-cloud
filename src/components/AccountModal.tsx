@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { X, ChevronDown } from "lucide-react";
 import { Account } from "./AccountTable";
 import { DuplicateWarning } from "./shared/DuplicateWarning";
+import { MergeRecordsModal } from "./shared/MergeRecordsModal";
 import { regions, regionCountries } from "@/utils/countryData";
 
 const accountSchema = z.object({
@@ -42,6 +43,7 @@ const accountSchema = z.object({
       message: "Please enter a valid phone number (e.g., +1 234 567 8900)"
     })
     .optional(),
+  account_owner: z.string().optional(),
 });
 
 type AccountFormData = z.infer<typeof accountSchema>;
@@ -79,6 +81,11 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
   const [loading, setLoading] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [availableCountries, setAvailableCountries] = useState<string[]>([]);
+  const [users, setUsers] = useState<{ id: string; full_name: string | null }[]>([]);
+  
+  // Merge modal state
+  const [mergeModalOpen, setMergeModalOpen] = useState(false);
+  const [mergeTargetId, setMergeTargetId] = useState<string>("");
 
   // Duplicate detection for accounts
   const { duplicates, isChecking, checkDuplicates, clearDuplicates } = useDuplicateDetection({
@@ -117,6 +124,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
       notes: "",
       industry: "",
       phone: "",
+      account_owner: "",
     },
   });
 
@@ -129,6 +137,24 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
       setAvailableCountries([]);
     }
   }, [watchedRegion]);
+
+  // Fetch users for owner dropdown
+  useEffect(() => {
+    const fetchUsers = async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .order('full_name', { ascending: true });
+      
+      if (!error && data) {
+        setUsers(data);
+      }
+    };
+    
+    if (open) {
+      fetchUsers();
+    }
+  }, [open]);
 
   useEffect(() => {
     if (account) {
@@ -143,7 +169,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
         notes: account.notes || "",
         industry: account.industry || "",
         phone: account.phone || "",
-        
+        account_owner: account.account_owner || "",
       });
       setSelectedTags(account.tags || []);
       if (account.region && regionCountries[account.region]) {
@@ -161,7 +187,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
         notes: "",
         industry: "",
         phone: "",
-        
+        account_owner: "",
       });
       setSelectedTags([]);
     }
@@ -206,7 +232,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
         }
       }
 
-      // Only set account_owner on create, not update
+      // Build account data with owner
       const accountData = {
         company_name: data.company_name,
         email: data.email || null,
@@ -220,8 +246,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
         industry: data.industry || null,
         phone: data.phone || null,
         modified_by: user.data.user.id,
-        // Only set account_owner on new accounts
-        ...(account ? {} : { account_owner: user.data.user.id }),
+        account_owner: data.account_owner || user.data.user.id,
       };
 
       if (account) {
@@ -281,7 +306,7 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" disableOutsidePointerEvents={false}>
         <DialogHeader>
           <DialogTitle>
             {account ? "Edit Account" : "Add New Account"}
@@ -292,7 +317,15 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
             {/* Duplicate Warning */}
             {!account && duplicates.length > 0 && (
-              <DuplicateWarning duplicates={duplicates} entityType="account" />
+              <DuplicateWarning 
+                duplicates={duplicates} 
+                entityType="account"
+                onMerge={(duplicateId) => {
+                  setMergeTargetId(duplicateId);
+                  setMergeModalOpen(true);
+                }}
+                preventCreation={duplicates.some(d => d.matchType === "exact")}
+              />
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -484,6 +517,31 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
                   </FormItem>
                 )}
               />
+
+              <FormField
+                control={form.control}
+                name="account_owner"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Account Owner</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select owner..." />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {users.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.full_name || 'Unknown User'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
             </div>
 
             {/* Tags Multi-select */}
@@ -607,6 +665,24 @@ export const AccountModal = ({ open, onOpenChange, account, onSuccess, onCreated
           </form>
         </Form>
       </DialogContent>
+
+      {/* Merge Modal */}
+      {mergeTargetId && (
+        <MergeRecordsModal
+          open={mergeModalOpen}
+          onOpenChange={(open) => {
+            setMergeModalOpen(open);
+            if (!open) setMergeTargetId("");
+          }}
+          entityType="accounts"
+          sourceId=""
+          targetId={mergeTargetId}
+          onSuccess={() => {
+            onSuccess();
+            onOpenChange(false);
+          }}
+        />
+      )}
     </Dialog>
   );
 };

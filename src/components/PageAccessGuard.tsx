@@ -1,4 +1,4 @@
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, Link } from 'react-router-dom';
 import { usePermissions } from '@/contexts/PermissionsContext';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -10,10 +10,14 @@ interface PageAccessGuardProps {
 const PageAccessGuard = ({ children }: PageAccessGuardProps) => {
   const location = useLocation();
   const { user, loading: authLoading } = useAuth();
-  const { hasPageAccess, loading: permissionsLoading } = usePermissions();
+  const { hasPageAccess, loading: permissionsLoading, permissions } = usePermissions();
 
-  // Only show loading during initial app load
-  if (authLoading || permissionsLoading) {
+  // Only show full loading on initial app load when we have NO cached data at all
+  // If we have cached permissions (from React Query persistence), render immediately
+  const hasCachedData = permissions.length > 0;
+  const showLoader = authLoading || (permissionsLoading && !hasCachedData);
+
+  if (showLoader) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
@@ -41,12 +45,12 @@ const PageAccessGuard = ({ children }: PageAccessGuardProps) => {
           <p className="text-muted-foreground mb-6">
             You don't have permission to access this page. Please contact your administrator if you believe this is an error.
           </p>
-          <a
-            href="/"
+          <Link
+            to="/"
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Go to Dashboard
-          </a>
+          </Link>
         </div>
       </div>
     );
