@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Mail, Search, Eye, Clock, Filter, RefreshCw, ChevronLeft, ChevronRight, RotateCcw, Loader2, Download, Calendar, AlertTriangle, XCircle, CheckCircle2, Send, Ban, MailX, ChevronDown, Info } from "lucide-react";
+import { Mail, Search, Eye, Clock, Filter, RefreshCw, ChevronLeft, ChevronRight, RotateCcw, Loader2, Download, Calendar, AlertTriangle, XCircle, CheckCircle2, Send, Ban, MailX, ChevronDown, Info, Reply } from "lucide-react";
 import { format } from "date-fns";
 
 interface EmailHistoryRecord {
@@ -35,6 +35,9 @@ interface EmailHistoryRecord {
   bounce_type: string | null;
   bounce_reason: string | null;
   bounced_at: string | null;
+  reply_count: number | null;
+  replied_at: string | null;
+  last_reply_at: string | null;
 }
 
 const ITEMS_PER_PAGE = 10;
@@ -178,7 +181,7 @@ const EmailHistorySettings = () => {
     try {
       const { data, error } = await supabase
         .from('email_history')
-        .select('id, recipient_email, recipient_name, sender_email, subject, body, status, sent_at, sent_by, delivered_at, opened_at, open_count, unique_opens, is_valid_open, click_count, clicked_at, contact_id, lead_id, account_id, bounce_type, bounce_reason, bounced_at')
+        .select('id, recipient_email, recipient_name, sender_email, subject, body, status, sent_at, sent_by, delivered_at, opened_at, open_count, unique_opens, is_valid_open, click_count, clicked_at, contact_id, lead_id, account_id, bounce_type, bounce_reason, bounced_at, reply_count, replied_at, last_reply_at')
         .eq('sent_by', user.id)
         .order('sent_at', { ascending: false });
 

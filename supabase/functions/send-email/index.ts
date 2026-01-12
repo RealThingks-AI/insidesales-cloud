@@ -295,17 +295,40 @@ const handler = async (req: Request): Promise<Response> => {
     // Send email via Microsoft Graph API with tracking pixel and click tracking
     await sendEmail(accessToken, { to, subject, body, toName, from, attachments }, emailRecord.id);
 
-    // Update email history to mark as sent (NOT delivered - we can't confirm delivery)
-    // Email will transition to "opened" when tracking pixel loads, or "bounced" if NDR detected
+    // Fetch the sent message to get its Message-ID for reply tracking
+    let messageId: string | null = null;
+    try {
+      // Wait a moment for the message to appear in Sent Items
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const sentItemsUrl = `https://graph.microsoft.com/v1.0/users/${from}/mailFolders/SentItems/messages?$top=1&$orderby=sentDateTime desc&$select=internetMessageId,subject&$filter=subject eq '${encodeURIComponent(subject.replace(/'/g, "''"))}'`;
+      
+      const sentResponse = await fetch(sentItemsUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      
+      if (sentResponse.ok) {
+        const sentData = await sentResponse.json();
+        if (sentData.value && sentData.value.length > 0) {
+          messageId = sentData.value[0].internetMessageId;
+          console.log(`Captured Message-ID: ${messageId}`);
+        }
+      }
+    } catch (msgIdError) {
+      console.warn("Failed to capture Message-ID:", msgIdError);
+    }
+
+    // Update email history to mark as sent with Message-ID
     await supabase
       .from("email_history")
       .update({ 
         status: "sent",
-        is_valid_open: true
+        is_valid_open: true,
+        message_id: messageId,
       })
       .eq("id", emailRecord.id);
 
-    console.log(`Email marked as sent for record: ${emailRecord.id}`);
+    console.log(`Email marked as sent for record: ${emailRecord.id}${messageId ? ' with Message-ID' : ''}`);
 
     // Queue a bounce check for 45 seconds from now (auto bounce detection)
     const checkAfter = new Date(Date.now() + 45000).toISOString();
